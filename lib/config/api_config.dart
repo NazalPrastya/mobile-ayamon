@@ -31,4 +31,8 @@ class ApiConfig {
   static String get farmsUrl => '$baseUrl/api/farms';
   static String farmUrl(String id) => '$baseUrl/api/farm/$id';
   static String get createFarmUrl => '$baseUrl/api/farm';
+  static String get dailyProductionUrl => '$baseUrl/api/daily-production';
+  static String dailyProductionItemUrl(String id) =>
+      '$baseUrl/api/daily-production/$id';
+  static String get dailyProductionsUrl => '$baseUrl/api/daily-productions';
 }

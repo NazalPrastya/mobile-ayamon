@@ -1,22 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'farm_list_screen.dart';
-
-class DailyRecord {
-  final String date;
-  final int telur;
-  final double beratKg;
-  final int mati;
-  final double pakanKg;
-
-  const DailyRecord({
-    required this.date,
-    required this.telur,
-    required this.beratKg,
-    required this.mati,
-    required this.pakanKg,
-  });
-}
+import '../models/daily_production_model.dart';
+import '../services/daily_production_service.dart';
 
 class FarmInputScreen extends StatefulWidget {
   final Farm farm;
@@ -44,61 +30,70 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
   final _pakanCtrl = TextEditingController(text: '0.0');
   final _catatanCtrl = TextEditingController();
 
-  // Dummy riwayat data
-  final List<DailyRecord> _riwayat = const [
-    DailyRecord(
-      date: '05-02',
-      telur: 769,
-      beratKg: 47.7,
-      mati: 0,
-      pakanKg: 152.9,
-    ),
-    DailyRecord(
-      date: '05-03',
-      telur: 789,
-      beratKg: 48.9,
-      mati: 0,
-      pakanKg: 157.4,
-    ),
-    DailyRecord(
-      date: '05-04',
-      telur: 825,
-      beratKg: 51.1,
-      mati: 0,
-      pakanKg: 154.7,
-    ),
-    DailyRecord(
-      date: '05-05',
-      telur: 803,
-      beratKg: 49.8,
-      mati: 0,
-      pakanKg: 149.0,
-    ),
-    DailyRecord(
-      date: '05-06',
-      telur: 799,
-      beratKg: 49.5,
-      mati: 0,
-      pakanKg: 157.5,
-    ),
-    DailyRecord(
-      date: '05-07',
-      telur: 788,
-      beratKg: 48.9,
-      mati: 0,
-      pakanKg: 157.7,
-    ),
-    DailyRecord(
-      date: '05-08',
-      telur: 789,
-      beratKg: 48.9,
-      mati: 0,
-      pakanKg: 156.7,
-    ),
-  ];
+  List<DailyProductionModel> _riwayat = [];
+  bool _riwayatLoading = true;
+  bool _isSaving = false;
+  int _currentPage = 1;
+  int _lastPage = 1;
+  bool _loadingMore = false;
+
+  late final ScrollController _scrollCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollCtrl = ScrollController();
+    _scrollCtrl.addListener(() {
+      if (_scrollCtrl.position.pixels >=
+              _scrollCtrl.position.maxScrollExtent - 100 &&
+          !_loadingMore &&
+          _currentPage < _lastPage) {
+        _loadMore();
+      }
+    });
+    _loadRiwayat();
+  }
+
+  Future<void> _loadRiwayat() async {
+    setState(() {
+      _riwayatLoading = true;
+      _currentPage = 1;
+    });
+    final (list, lastPage, _) = await DailyProductionService.instance.getList(
+      widget.farm.id,
+      page: 1,
+    );
+    if (mounted) {
+      setState(() {
+        _riwayat = list ?? [];
+        _lastPage = lastPage ?? 1;
+        _riwayatLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    setState(() => _loadingMore = true);
+    final nextPage = _currentPage + 1;
+    final (list, lastPage, _) = await DailyProductionService.instance.getList(
+      widget.farm.id,
+      page: nextPage,
+    );
+    if (mounted) {
+      setState(() {
+        if (list != null) {
+          _riwayat.addAll(list);
+          _currentPage = nextPage;
+          _lastPage = lastPage ?? _lastPage;
+        }
+        _loadingMore = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
+    _scrollCtrl.dispose();
     _telurCtrl.dispose();
     _beratCtrl.dispose();
     _matiCtrl.dispose();
@@ -129,24 +124,56 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
   String _formatDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
-  void _simpanData() {
-    if (_formKey.currentState!.validate()) {
+  void _simpanData() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isSaving = true);
+
+    // Format date as dd-MM-yyyy per API requirement
+    final d = _selectedDate;
+    final dateStr =
+        '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
+
+    final (_, error) = await DailyProductionService.instance.create({
+      'farm_id': widget.farm.id,
+      'date': dateStr,
+      'egg_count': int.tryParse(_telurCtrl.text.trim()) ?? 0,
+      'egg_weight': double.tryParse(_beratCtrl.text.trim()) ?? 0.0,
+      'chicken_death': int.tryParse(_matiCtrl.text.trim()) ?? 0,
+      'feed_sold': double.tryParse(_pakanCtrl.text.trim()) ?? 0.0,
+      'note': _catatanCtrl.text.trim(),
+    });
+
+    if (!mounted) return;
+    setState(() => _isSaving = false);
+
+    if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Data berhasil disimpan!'),
-          backgroundColor: const Color(0xFFFF6B00),
+          content: Text(error),
+          backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
         ),
       );
-      _telurCtrl.text = '0';
-      _beratCtrl.text = '0.0';
-      _matiCtrl.text = '0';
-      _pakanCtrl.text = '0.0';
-      _catatanCtrl.clear();
+      return;
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Data berhasil disimpan!'),
+        backgroundColor: const Color(0xFFFF6B00),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+    _telurCtrl.text = '0';
+    _beratCtrl.text = '0.0';
+    _matiCtrl.text = '0';
+    _pakanCtrl.text = '0.0';
+    _catatanCtrl.clear();
+    _loadRiwayat(); // refresh table
   }
 
   @override
@@ -176,6 +203,7 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
       appBar: _buildAppBar(dateStr),
       bottomNavigationBar: _buildBottomNav(),
       body: SingleChildScrollView(
+        controller: _scrollCtrl,
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -423,15 +451,24 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
               width: double.infinity,
               height: 52,
               child: ElevatedButton.icon(
-                onPressed: _simpanData,
-                icon: const Icon(
-                  Icons.save_outlined,
-                  color: Colors.white,
-                  size: 20,
-                ),
-                label: const Text(
-                  'Simpan Data',
-                  style: TextStyle(
+                onPressed: _isSaving ? null : _simpanData,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.save_outlined,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                label: Text(
+                  _isSaving ? 'Menyimpan...' : 'Simpan Data',
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
@@ -526,55 +563,123 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
             ],
           ),
           const SizedBox(height: 14),
-
-          // Table header
-          const Row(
-            children: [
-              _TableHeader('Tanggal', flex: 2),
-              _TableHeader('Telur', flex: 2),
-              _TableHeader('Berat kg', flex: 2),
-              _TableHeader('Mati', flex: 1),
-              _TableHeader('Pakan kg', flex: 2),
-              SizedBox(width: 28),
-            ],
-          ),
-          const Divider(height: 14, color: Color(0xFFF0F0F0)),
-
-          // Rows
-          ...List.generate(_riwayat.length, (i) {
-            final r = _riwayat[i];
-            return Column(
+          if (_riwayatLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: CircularProgressIndicator(color: Color(0xFFFF6B00)),
+              ),
+            )
+          else if (_riwayat.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Text(
+                  'Belum ada data harian.',
+                  style: TextStyle(color: Color(0xFF888888), fontSize: 13),
+                ),
+              ),
+            )
+          else
+            Column(
               children: [
-                Row(
+                // Table header
+                const Row(
                   children: [
-                    _tableCell(r.date, flex: 2),
-                    _tableCell(r.telur.toString(), flex: 2),
-                    _tableCell(r.beratKg.toString(), flex: 2),
-                    _tableCell(r.mati.toString(), flex: 1),
-                    _tableCell(r.pakanKg.toString(), flex: 2),
-                    GestureDetector(
-                      onTap: () {},
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF0F0),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.chevron_right,
-                          size: 18,
+                    _TableHeader('Tanggal', flex: 2),
+                    _TableHeader('Telur', flex: 2),
+                    _TableHeader('Berat kg', flex: 2),
+                    _TableHeader('Mati', flex: 1),
+                    _TableHeader('Pakan kg', flex: 2),
+                  ],
+                ),
+                const Divider(height: 14, color: Color(0xFFF0F0F0)),
+                ...List.generate(_riwayat.length, (i) {
+                  final r = _riwayat[i];
+                  return Column(
+                    children: [
+                      Row(
+                        children: [
+                          _tableCell(r.shortDate, flex: 2),
+                          _tableCell(r.eggCount.toString(), flex: 2),
+                          _tableCell(r.eggWeight.toStringAsFixed(1), flex: 2),
+                          _tableCell(r.chickenDeath.toString(), flex: 1),
+                          _tableCell(r.feedSold.toStringAsFixed(1), flex: 2),
+                          PopupMenuButton<String>(
+                            padding: EdgeInsets.zero,
+                            iconSize: 18,
+                            icon: const Icon(
+                              Icons.more_vert,
+                              color: Color(0xFFCCCCCC),
+                              size: 18,
+                            ),
+                            onSelected: (value) {
+                              if (value == 'edit') _showEditSheet(r);
+                              if (value == 'delete') _deleteRecord(r);
+                            },
+                            itemBuilder: (_) => [
+                              const PopupMenuItem(
+                                value: 'edit',
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.edit_outlined,
+                                      size: 15,
+                                      color: Color(0xFF555555),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Edit',
+                                      style: TextStyle(fontSize: 13),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.delete_outline,
+                                      size: 15,
+                                      color: Colors.red,
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Hapus',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.red,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      if (i < _riwayat.length - 1)
+                        const Divider(height: 18, color: Color(0xFFF5F5F5)),
+                    ],
+                  );
+                }),
+                if (_loadingMore)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
                           color: Color(0xFFFF6B00),
+                          strokeWidth: 2,
                         ),
                       ),
                     ),
-                  ],
-                ),
-                if (i < _riwayat.length - 1)
-                  const Divider(height: 18, color: Color(0xFFF5F5F5)),
+                  ),
               ],
-            );
-          }),
+            ),
         ],
       ),
     );
@@ -588,6 +693,297 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
         style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A1A)),
       ),
     );
+  }
+
+  void _showEditSheet(DailyProductionModel record) {
+    final editDate = ValueNotifier<DateTime>(
+      DateTime.tryParse(record.date) ?? DateTime.now(),
+    );
+    final telurCtrl = TextEditingController(text: record.eggCount.toString());
+    final beratCtrl = TextEditingController(
+      text: record.eggWeight.toStringAsFixed(1),
+    );
+    final matiCtrl = TextEditingController(
+      text: record.chickenDeath.toString(),
+    );
+    final pakanCtrl = TextEditingController(
+      text: record.feedSold.toStringAsFixed(1),
+    );
+    final catatanCtrl = TextEditingController(text: record.note ?? '');
+    bool saving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Handle
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE0E0E0),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                    const Text(
+                      'Edit Data Harian',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Date picker
+                    ValueListenableBuilder<DateTime>(
+                      valueListenable: editDate,
+                      builder: (_, date, _) => GestureDetector(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: ctx,
+                            initialDate: date,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now().add(
+                              const Duration(days: 365),
+                            ),
+                            builder: (c, child) => Theme(
+                              data: Theme.of(c).copyWith(
+                                colorScheme: const ColorScheme.light(
+                                  primary: Color(0xFFFF6B00),
+                                  onPrimary: Colors.white,
+                                ),
+                              ),
+                              child: child!,
+                            ),
+                          );
+                          if (picked != null) editDate.value = picked;
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5F5F5),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                _formatDate(date),
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              const Icon(
+                                Icons.calendar_today_outlined,
+                                size: 16,
+                                color: Color(0xFF888888),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _sheetField(telurCtrl, 'Jumlah Telur', false),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _sheetField(beratCtrl, 'Berat (kg)', true),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _sheetField(matiCtrl, 'Kematian', false),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _sheetField(pakanCtrl, 'Pakan (kg)', true),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: catatanCtrl,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        labelText: 'Catatan',
+                        labelStyle: const TextStyle(
+                          color: Color(0xFF888888),
+                          fontSize: 13,
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFFF5F5F5),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: saving
+                            ? null
+                            : () async {
+                                setSheet(() => saving = true);
+                                final d = editDate.value;
+                                final dateStr =
+                                    '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
+                                final (_, error) = await DailyProductionService
+                                    .instance
+                                    .update(record.id, {
+                                      'farm_id': widget.farm.id,
+                                      'date': dateStr,
+                                      'egg_count':
+                                          int.tryParse(telurCtrl.text) ?? 0,
+                                      'egg_weight':
+                                          double.tryParse(beratCtrl.text) ??
+                                          0.0,
+                                      'chicken_death':
+                                          int.tryParse(matiCtrl.text) ?? 0,
+                                      'feed_sold':
+                                          double.tryParse(pakanCtrl.text) ??
+                                          0.0,
+                                      'note': catatanCtrl.text.trim(),
+                                    });
+                                setSheet(() => saving = false);
+                                if (!mounted) return;
+                                Navigator.pop(ctx);
+                                if (error != null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(error),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                } else {
+                                  _loadRiwayat();
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF6B00),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: saving
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                'Simpan Perubahan',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _sheetField(TextEditingController ctrl, String label, bool decimal) {
+    return TextField(
+      controller: ctrl,
+      keyboardType: TextInputType.numberWithOptions(decimal: decimal),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(
+          decimal ? RegExp(r'^\d*\.?\d*') : RegExp(r'^\d*'),
+        ),
+      ],
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Color(0xFF888888), fontSize: 13),
+        filled: true,
+        fillColor: const Color(0xFFF5F5F5),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 10,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteRecord(DailyProductionModel record) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus Data'),
+        content: Text(
+          'Hapus data tanggal ${record.shortDate}? Tindakan ini tidak bisa dibatalkan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    final error = await DailyProductionService.instance.delete(record.id);
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: Colors.red),
+      );
+    } else {
+      _loadRiwayat();
+    }
   }
 
   // ─── Bottom Nav ──────────────────────────────────────────────────────────────

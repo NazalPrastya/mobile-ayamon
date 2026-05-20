@@ -6,11 +6,13 @@ import '../services/farm_service.dart';
 import '../models/farm_model.dart';
 
 class Farm {
+  final String id;
   final String name;
   final String location;
   final String period;
 
   const Farm({
+    required this.id,
     required this.name,
     required this.location,
     required this.period,
@@ -334,6 +336,7 @@ class _FarmCard extends StatelessWidget {
           MaterialPageRoute(
             builder: (_) => FarmDashboardScreen(
               farm: Farm(
+                id: farm.id,
                 name: farm.name,
                 location: farm.location ?? 'Lokasi belum diatur',
                 period: farm.periode,
