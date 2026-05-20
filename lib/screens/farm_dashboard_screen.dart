@@ -4,6 +4,7 @@ import 'farm_list_screen.dart';
 import 'farm_input_screen.dart';
 import 'farm_finance_screen.dart';
 import 'farm_schedule_screen.dart';
+import 'farm_report_screen.dart';
 
 class FarmDashboardScreen extends StatefulWidget {
   final Farm farm;
@@ -726,6 +727,20 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
                       onNavTap: (idx) {
                         Navigator.pop(context);
                         if (idx != 3) setState(() => _selectedIndex = idx);
+                      },
+                    ),
+                  ),
+                );
+              } else if (i == 4) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => FarmReportScreen(
+                      farm: widget.farm,
+                      selectedNavIndex: 4,
+                      onNavTap: (idx) {
+                        Navigator.pop(context);
+                        if (idx != 4) setState(() => _selectedIndex = idx);
                       },
                     ),
                   ),
