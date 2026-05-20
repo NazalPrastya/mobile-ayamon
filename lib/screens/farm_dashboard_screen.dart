@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'farm_list_screen.dart';
 import 'farm_input_screen.dart';
+import 'farm_finance_screen.dart';
 
 class FarmDashboardScreen extends StatefulWidget {
   final Farm farm;
@@ -696,6 +697,20 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
                       onNavTap: (idx) {
                         Navigator.pop(context);
                         if (idx != 1) setState(() => _selectedIndex = idx);
+                      },
+                    ),
+                  ),
+                );
+              } else if (i == 2) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => FarmFinanceScreen(
+                      farm: widget.farm,
+                      selectedNavIndex: 2,
+                      onNavTap: (idx) {
+                        Navigator.pop(context);
+                        if (idx != 2) setState(() => _selectedIndex = idx);
                       },
                     ),
                   ),
