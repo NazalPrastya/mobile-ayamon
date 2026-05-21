@@ -45,14 +45,6 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
   void initState() {
     super.initState();
     _scrollCtrl = ScrollController();
-    _scrollCtrl.addListener(() {
-      if (_scrollCtrl.position.pixels >=
-              _scrollCtrl.position.maxScrollExtent - 100 &&
-          !_loadingMore &&
-          _currentPage < _lastPage) {
-        _loadMore();
-      }
-    });
     _loadRiwayat();
   }
 
@@ -676,6 +668,36 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
                         child: CircularProgressIndicator(
                           color: Color(0xFFFF6B00),
                           strokeWidth: 2,
+                        ),
+                      ),
+                    ),
+                  )
+                else if (_currentPage < _lastPage)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _loadMore,
+                        icon: const Icon(
+                          Icons.expand_more,
+                          color: Color(0xFFFF6B00),
+                          size: 18,
+                        ),
+                        label: const Text(
+                          'Muat Lebih',
+                          style: TextStyle(
+                            color: Color(0xFFFF6B00),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFFF6B00)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
                         ),
                       ),
                     ),
