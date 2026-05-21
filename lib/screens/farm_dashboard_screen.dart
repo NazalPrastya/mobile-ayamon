@@ -86,24 +86,58 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
         child: _buildHeader(dateStr),
       ),
       bottomNavigationBar: _buildBottomNav(),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildAlertBanner(),
-            const SizedBox(height: 14),
-            _buildStatsGrid(),
-            const SizedBox(height: 16),
-            _buildChartCard(),
-            const SizedBox(height: 16),
-            _buildBepCard(),
-            const SizedBox(height: 16),
-            _buildScheduleCard(),
-            const SizedBox(height: 16),
-            _buildInputCard(),
-          ],
-        ),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          // 0 – Dashboard
+          SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildAlertBanner(),
+                const SizedBox(height: 14),
+                _buildStatsGrid(),
+                const SizedBox(height: 16),
+                _buildChartCard(),
+                const SizedBox(height: 16),
+                _buildBepCard(),
+                const SizedBox(height: 16),
+                _buildScheduleCard(),
+                const SizedBox(height: 16),
+                _buildInputCard(),
+              ],
+            ),
+          ),
+          // 1 – Input
+          FarmInputScreen(
+            farm: widget.farm,
+            selectedNavIndex: 1,
+            onNavTap: (_) {},
+            embedded: true,
+          ),
+          // 2 – Keuangan
+          FarmFinanceScreen(
+            farm: widget.farm,
+            selectedNavIndex: 2,
+            onNavTap: (_) {},
+            embedded: true,
+          ),
+          // 3 – Jadwal
+          FarmScheduleScreen(
+            farm: widget.farm,
+            selectedNavIndex: 3,
+            onNavTap: (_) {},
+            embedded: true,
+          ),
+          // 4 – Laporan
+          FarmReportScreen(
+            farm: widget.farm,
+            selectedNavIndex: 4,
+            onNavTap: (_) {},
+            embedded: true,
+          ),
+        ],
       ),
     );
   }
@@ -689,65 +723,7 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
           final selected = i == _selectedIndex;
           return GestureDetector(
             onTap: () {
-              if (i == 1) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => FarmInputScreen(
-                      farm: widget.farm,
-                      selectedNavIndex: 1,
-                      onNavTap: (idx) {
-                        Navigator.pop(context);
-                        if (idx != 1) setState(() => _selectedIndex = idx);
-                      },
-                    ),
-                  ),
-                );
-              } else if (i == 2) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => FarmFinanceScreen(
-                      farm: widget.farm,
-                      selectedNavIndex: 2,
-                      onNavTap: (idx) {
-                        Navigator.pop(context);
-                        if (idx != 2) setState(() => _selectedIndex = idx);
-                      },
-                    ),
-                  ),
-                );
-              } else if (i == 3) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => FarmScheduleScreen(
-                      farm: widget.farm,
-                      selectedNavIndex: 3,
-                      onNavTap: (idx) {
-                        Navigator.pop(context);
-                        if (idx != 3) setState(() => _selectedIndex = idx);
-                      },
-                    ),
-                  ),
-                );
-              } else if (i == 4) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => FarmReportScreen(
-                      farm: widget.farm,
-                      selectedNavIndex: 4,
-                      onNavTap: (idx) {
-                        Navigator.pop(context);
-                        if (idx != 4) setState(() => _selectedIndex = idx);
-                      },
-                    ),
-                  ),
-                );
-              } else {
-                setState(() => _selectedIndex = i);
-              }
+              setState(() => _selectedIndex = i);
             },
             child: Column(
               mainAxisSize: MainAxisSize.min,

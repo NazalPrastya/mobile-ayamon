@@ -28,12 +28,14 @@ class FarmScheduleScreen extends StatefulWidget {
   final Farm farm;
   final int selectedNavIndex;
   final ValueChanged<int> onNavTap;
+  final bool embedded;
 
   const FarmScheduleScreen({
     super.key,
     required this.farm,
     required this.selectedNavIndex,
     required this.onNavTap,
+    this.embedded = false,
   });
 
   @override
@@ -202,8 +204,8 @@ class _FarmScheduleScreenState extends State<FarmScheduleScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
-      appBar: _buildAppBar(dateStr),
-      bottomNavigationBar: _buildBottomNav(),
+      appBar: widget.embedded ? null : _buildAppBar(dateStr),
+      bottomNavigationBar: widget.embedded ? null : _buildBottomNav(),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
         child: Column(
