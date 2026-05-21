@@ -35,4 +35,10 @@ class ApiConfig {
   static String dailyProductionItemUrl(String id) =>
       '$baseUrl/api/daily-production/$id';
   static String get dailyProductionsUrl => '$baseUrl/api/daily-productions';
+  static String enumerationsUrl(String key) =>
+      '$baseUrl/api/enumerations?key=$key';
+  static String expensesUrl(String farmId, {int page = 1}) =>
+      '$baseUrl/api/expenses?farm_id=$farmId&page=$page';
+  static String expenseUrl(String id) => '$baseUrl/api/expense/$id';
+  static String get createExpenseUrl => '$baseUrl/api/expense';
 }

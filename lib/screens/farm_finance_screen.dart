@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'farm_list_screen.dart';
 import '../models/farm_model.dart';
 import '../services/farm_service.dart';
+import '../services/auth_service.dart';
+import '../config/api_config.dart';
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 
@@ -60,46 +64,569 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
 
   // ── Pengeluaran state ──
   DateTime _expDate = DateTime.now();
-  String _expCategory = 'Pakan';
+  // category map: id → display value
+  Map<String, String> _categoryMap = {};
+  List<String> _categoryIds = []; // ordered list of ids for dropdown
+  String _expCategoryId = ''; // selected category UUID
+  bool _categoriesLoading = true;
   final _expAmountCtrl = TextEditingController(text: '0');
   final _expNoteCtrl = TextEditingController();
 
-  final List<_Expense> _expenses = [
-    _Expense(
-      id: '1',
-      date: '05-01',
-      category: 'Tenaga Kerja',
-      amount: 3500000.0,
-      note: 'Gaji bul',
-    ),
-    _Expense(
-      id: '2',
-      date: '05-03',
-      category: 'Obat/Vitamin',
-      amount: 450000.0,
-      note: 'Suplem minggu',
-    ),
-    _Expense(
-      id: '3',
-      date: '05-05',
-      category: 'Utilitas',
-      amount: 200000.0,
-      note: 'Listrik',
-    ),
-  ];
-
-  final List<String> _categories = [
-    'Pakan',
-    'Tenaga Kerja',
-    'Obat/Vitamin',
-    'Utilitas',
-    'Lainnya',
-  ];
+  List<_Expense> _expenses = [];
+  bool _expensesLoading = true;
+  String? _expensesError;
+  int _expCurrentPage = 1;
+  int _expLastPage = 1;
 
   @override
   void initState() {
     super.initState();
     _loadFarmDetail();
+    _loadCategories();
+    _loadExpenses();
+  }
+
+  Future<void> _loadCategories() async {
+    final token = await AuthService.instance.getToken();
+    if (token == null) return;
+    try {
+      final response = await http.get(
+        Uri.parse(ApiConfig.enumerationsUrl('expense_category')),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final data = body['data'] as List<dynamic>? ?? [];
+        final map = <String, String>{};
+        final ids = <String>[];
+        for (final e in data) {
+          final id = e['id']?.toString() ?? '';
+          final val = e['value']?.toString() ?? '';
+          if (id.isNotEmpty && val.isNotEmpty) {
+            map[id] = val;
+            ids.add(id);
+          }
+        }
+        setState(() {
+          _categoryMap = map;
+          _categoryIds = ids;
+          _expCategoryId = ids.isNotEmpty ? ids.first : '';
+          _categoriesLoading = false;
+        });
+      } else {
+        setState(() => _categoriesLoading = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _categoriesLoading = false);
+    }
+  }
+
+  Future<void> _loadExpenses({bool refresh = false}) async {
+    if (refresh) {
+      setState(() {
+        _expCurrentPage = 1;
+        _expLastPage = 1;
+        _expenses = [];
+        _expensesError = null;
+        _expensesLoading = true;
+      });
+    }
+    final token = await AuthService.instance.getToken();
+    if (token == null) return;
+    try {
+      final response = await http.get(
+        Uri.parse(ApiConfig.expensesUrl(widget.farm.id, page: _expCurrentPage)),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final data = body['data'] as List<dynamic>? ?? [];
+        final meta = body['meta'] as Map<String, dynamic>? ?? {};
+        final loaded = data.map<_Expense>((e) {
+          DateTime? dt;
+          try {
+            dt = DateTime.parse(e['date']?.toString() ?? '');
+          } catch (_) {}
+          final dateLabel = dt != null
+              ? '${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}'
+              : '';
+          return _Expense(
+            id: e['id']?.toString() ?? '',
+            date: dateLabel,
+            category: e['category']?.toString() ?? '',
+            amount: double.tryParse(e['total']?.toString() ?? '0') ?? 0,
+            note: e['note']?.toString() ?? '',
+          );
+        }).toList();
+        setState(() {
+          _expenses = refresh ? loaded : [..._expenses, ...loaded];
+          _expLastPage = (meta['last_page'] as num?)?.toInt() ?? 1;
+          _expensesLoading = false;
+        });
+      } else {
+        setState(() {
+          _expensesError = 'Gagal memuat pengeluaran';
+          _expensesLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _expensesError = e.toString();
+          _expensesLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _addExpense() async {
+    final amount =
+        double.tryParse(_expAmountCtrl.text.trim().replaceAll('.', '')) ?? 0;
+    if (amount <= 0 || _expCategoryId.isEmpty) return;
+    final token = await AuthService.instance.getToken();
+    if (token == null) return;
+    try {
+      final body = jsonEncode({
+        'farm_id': widget.farm.id,
+        'date':
+            '${_expDate.day.toString().padLeft(2, '0')}-${_expDate.month.toString().padLeft(2, '0')}-${_expDate.year}',
+        'category': _expCategoryId,
+        'total': amount.toStringAsFixed(0),
+        'note': _expNoteCtrl.text.trim(),
+      });
+      final response = await http.post(
+        Uri.parse(ApiConfig.createExpenseUrl),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: body,
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _expAmountCtrl.text = '0';
+        _expNoteCtrl.clear();
+        _loadExpenses(refresh: true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menyimpan: ${response.statusCode}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteExpense(String id) async {
+    final token = await AuthService.instance.getToken();
+    if (token == null) return;
+    try {
+      await http.delete(
+        Uri.parse(ApiConfig.expenseUrl(id)),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (!mounted) return;
+      _loadExpenses(refresh: true);
+    } catch (_) {}
+  }
+
+  Future<void> _updateExpense(
+    String id,
+    DateTime date,
+    String categoryId,
+    double amount,
+    String note,
+  ) async {
+    final token = await AuthService.instance.getToken();
+    if (token == null) return;
+    final body = jsonEncode({
+      'farm_id': widget.farm.id,
+      'date':
+          '${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year}',
+      'category': categoryId,
+      'total': amount.toStringAsFixed(0),
+      'note': note,
+    });
+    try {
+      final response = await http.put(
+        Uri.parse(ApiConfig.expenseUrl(id)),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: body,
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _loadExpenses(refresh: true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal mengubah: ${response.statusCode}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showEditDialog(_Expense expense) async {
+    // Parse existing date from MM-dd label — best-effort; fall back to today
+    DateTime editDate = DateTime.now();
+    try {
+      final parts = expense.date.split('-');
+      if (parts.length == 2) {
+        editDate = DateTime(
+          DateTime.now().year,
+          int.parse(parts[0]),
+          int.parse(parts[1]),
+        );
+      }
+    } catch (_) {}
+
+    String editCategoryId = _categoryIds.contains(expense.category)
+        ? expense.category
+        : (_categoryIds.isNotEmpty ? _categoryIds.first : '');
+    final amountCtrl = TextEditingController(
+      text: _formatThousands(expense.amount.toStringAsFixed(0)),
+    );
+    final noteCtrl = TextEditingController(text: expense.note);
+    bool saving = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Handle bar
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE0E0E0),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                    const Text(
+                      'Edit Pengeluaran',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Tanggal
+                    const Text(
+                      'Tanggal',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF888888),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    GestureDetector(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: editDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now().add(
+                            const Duration(days: 365),
+                          ),
+                          builder: (c, child) => Theme(
+                            data: Theme.of(c).copyWith(
+                              colorScheme: const ColorScheme.light(
+                                primary: Color(0xFFFF6B00),
+                                onPrimary: Colors.white,
+                              ),
+                            ),
+                            child: child!,
+                          ),
+                        );
+                        if (picked != null) setSheet(() => editDate = picked);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              _formatDate(editDate),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF1A1A1A),
+                              ),
+                            ),
+                            const Icon(
+                              Icons.calendar_today_outlined,
+                              size: 18,
+                              color: Color(0xFF888888),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Kategori
+                    const Text(
+                      'Kategori',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF888888),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: editCategoryId.isNotEmpty
+                              ? editCategoryId
+                              : null,
+                          isExpanded: true,
+                          hint: const Text('Pilih kategori'),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                          items: _categoryIds
+                              .map(
+                                (id) => DropdownMenuItem(
+                                  value: id,
+                                  child: Text(
+                                    _categoryMap[id] ?? id,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) {
+                            if (v != null) setSheet(() => editCategoryId = v);
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Jumlah & Keterangan
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Jumlah (Rp)',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF888888),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              TextField(
+                                controller: amountCtrl,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  _ThousandSeparatorFormatter(),
+                                ],
+                                decoration: InputDecoration(
+                                  filled: true,
+                                  fillColor: const Color(0xFFF5F5F5),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 12,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Keterangan',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF888888),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              TextField(
+                                controller: noteCtrl,
+                                decoration: InputDecoration(
+                                  hintText: 'opsional',
+                                  hintStyle: const TextStyle(
+                                    color: Color(0xFFBBBBBB),
+                                    fontSize: 13,
+                                  ),
+                                  filled: true,
+                                  fillColor: const Color(0xFFF5F5F5),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 12,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: saving
+                            ? null
+                            : () {
+                                final amount =
+                                    double.tryParse(
+                                      amountCtrl.text.trim().replaceAll(
+                                        '.',
+                                        '',
+                                      ),
+                                    ) ??
+                                    0;
+                                if (amount <= 0 || editCategoryId.isEmpty)
+                                  return;
+                                setSheet(() => saving = true);
+                                final savedDate = editDate;
+                                final savedCategoryId = editCategoryId;
+                                final savedNote = noteCtrl.text.trim();
+                                Navigator.pop(ctx);
+                                _updateExpense(
+                                  expense.id,
+                                  savedDate,
+                                  savedCategoryId,
+                                  amount,
+                                  savedNote,
+                                );
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF6B00),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: saving
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                'Simpan',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _loadFarmDetail() async {
@@ -159,6 +686,8 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
     }
     return buf.toString().split('').reversed.join();
   }
+
+  String _categoryName(String id) => _categoryMap[id] ?? id;
 
   String _formatDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
@@ -521,8 +1050,6 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
 
   // ─── Pengeluaran ─────────────────────────────────────────────────────────────
   Widget _buildPengeluaran() {
-    final total = _expenses.fold(0.0, (sum, e) => sum + e.amount);
-
     return Column(
       children: [
         // Form card
@@ -620,27 +1147,50 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
                         color: const Color(0xFFF5F5F5),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _expCategory,
-                          isExpanded: true,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFF1A1A1A),
-                          ),
-                          items: _categories
-                              .map(
-                                (c) =>
-                                    DropdownMenuItem(value: c, child: Text(c)),
-                              )
-                              .toList(),
-                          onChanged: (v) {
-                            if (v != null) {
-                              setState(() => _expCategory = v);
-                            }
-                          },
-                        ),
-                      ),
+                      child: _categoriesLoading
+                          ? const SizedBox(
+                              height: 48,
+                              child: Center(
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: _categoryIds.contains(_expCategoryId)
+                                    ? _expCategoryId
+                                    : (_categoryIds.isNotEmpty
+                                          ? _categoryIds.first
+                                          : null),
+                                isExpanded: true,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                                hint: const Text('Pilih kategori'),
+                                items: _categoryIds
+                                    .map(
+                                      (id) => DropdownMenuItem(
+                                        value: id,
+                                        child: Text(
+                                          _categoryMap[id] ?? id,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (v) {
+                                  if (v != null) {
+                                    setState(() => _expCategoryId = v);
+                                  }
+                                },
+                              ),
+                            ),
                     ),
                   ],
                 ),
@@ -666,7 +1216,7 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
                     TextFormField(
                       controller: _expAmountCtrl,
                       keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      inputFormatters: [_ThousandSeparatorFormatter()],
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: const Color(0xFFF5F5F5),
@@ -735,25 +1285,7 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
             width: double.infinity,
             height: 50,
             child: ElevatedButton.icon(
-              onPressed: () {
-                final amount = double.tryParse(_expAmountCtrl.text.trim()) ?? 0;
-                if (amount <= 0) return;
-                setState(() {
-                  _expenses.insert(
-                    0,
-                    _Expense(
-                      id: DateTime.now().millisecondsSinceEpoch.toString(),
-                      date:
-                          '${_expDate.month.toString().padLeft(2, '0')}-${_expDate.day.toString().padLeft(2, '0')}',
-                      category: _expCategory,
-                      amount: amount,
-                      note: _expNoteCtrl.text.trim(),
-                    ),
-                  );
-                  _expAmountCtrl.text = '0';
-                  _expNoteCtrl.clear();
-                });
-              },
+              onPressed: _addExpense,
               icon: const Icon(Icons.add, color: Colors.white, size: 20),
               label: const Text(
                 'Tambah',
@@ -778,126 +1310,213 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
         _card([
           _sectionHeader(Icons.description_outlined, 'Riwayat Pengeluaran'),
           const SizedBox(height: 14),
-          // Header row
-          const Row(
-            children: [
-              _ColHead('Tgl', flex: 2),
-              _ColHead('Kategori', flex: 4),
-              _ColHead('Jumlah', flex: 4),
-              _ColHead('Ket', flex: 3),
-            ],
-          ),
-          const Divider(height: 12, color: Color(0xFFF0F0F0)),
-          ..._expenses.asMap().entries.map((e) {
-            final idx = e.key;
-            final r = e.value;
-            final catColor = _categoryColor(r.category);
-            return Column(
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+          if (_expensesLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: CircularProgressIndicator(color: Color(0xFFFF6B00)),
+              ),
+            )
+          else if (_expensesError != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Column(
                   children: [
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        r.date,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF666666),
-                        ),
+                    Text(
+                      _expensesError!,
+                      style: const TextStyle(
+                        color: Color(0xFF888888),
+                        fontSize: 13,
                       ),
                     ),
-                    Expanded(
-                      flex: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: catColor.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          r.category,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: catColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 4,
-                      child: Text(
-                        _formatRp(r.amount),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A1A),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              r.note,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF888888),
-                              ),
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () {
-                              setState(() => _expenses.removeAt(idx));
-                            },
-                            child: const Icon(
-                              Icons.delete_outline,
-                              size: 16,
-                              color: Color(0xFFCCCCCC),
-                            ),
-                          ),
-                        ],
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () => _loadExpenses(refresh: true),
+                      child: const Text(
+                        'Coba Lagi',
+                        style: TextStyle(color: Color(0xFFFF6B00)),
                       ),
                     ),
                   ],
                 ),
-                if (idx < _expenses.length - 1)
-                  const Divider(height: 16, color: Color(0xFFF5F5F5)),
-              ],
-            );
-          }),
-          const Divider(height: 16, color: Color(0xFFE0E0E0)),
-          Row(
-            children: [
-              const Expanded(flex: 2, child: SizedBox()),
-              const Expanded(
-                flex: 4,
+              ),
+            )
+          else if (_expenses.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
                 child: Text(
-                  'Total',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  'Belum ada pengeluaran',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
                 ),
               ),
-              Expanded(
-                flex: 7,
-                child: Text(
-                  _formatRp(total),
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1A1A1A),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            )
+          else
+            _buildExpenseTable(),
         ]),
+      ],
+    );
+  }
+
+  Widget _buildExpenseTable() {
+    final total = _expenses.fold(0.0, (sum, e) => sum + e.amount);
+    return Column(
+      children: [
+        _buildExpenseTableOld(total),
+        if (_expCurrentPage < _expLastPage)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: OutlinedButton(
+              onPressed: () {
+                setState(() => _expCurrentPage++);
+                _loadExpenses();
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFFF6B00),
+                side: const BorderSide(color: Color(0xFFFF6B00)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: const Text('Muat Lebih'),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildExpenseTableOld(double total) {
+    return Column(
+      children: [
+        // Header row
+        const Row(
+          children: [
+            _ColHead('Tgl', flex: 2),
+            _ColHead('Kategori', flex: 4),
+            _ColHead('Jumlah', flex: 4),
+            _ColHead('Ket', flex: 3),
+          ],
+        ),
+        const Divider(height: 12, color: Color(0xFFF0F0F0)),
+        ..._expenses.asMap().entries.map((e) {
+          final idx = e.key;
+          final r = e.value;
+          final catName = _categoryName(r.category);
+          final catColor = _categoryColor(catName);
+          return Column(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      r.date,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF666666),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: catColor.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        catName,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: catColor,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: Text(
+                      _formatRp(r.amount),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            r.note,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF888888),
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => _showEditDialog(r),
+                          child: const Icon(
+                            Icons.edit_outlined,
+                            size: 16,
+                            color: Color(0xFF888888),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () => _deleteExpense(r.id),
+                          child: const Icon(
+                            Icons.delete_outline,
+                            size: 16,
+                            color: Color(0xFFCCCCCC),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (idx < _expenses.length - 1)
+                const Divider(height: 16, color: Color(0xFFF5F5F5)),
+            ],
+          );
+        }),
+        const Divider(height: 16, color: Color(0xFFE0E0E0)),
+        Row(
+          children: [
+            const Expanded(flex: 2, child: SizedBox()),
+            const Expanded(
+              flex: 4,
+              child: Text(
+                'Total',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+              ),
+            ),
+            Expanded(
+              flex: 7,
+              child: Text(
+                _formatRp(total),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
