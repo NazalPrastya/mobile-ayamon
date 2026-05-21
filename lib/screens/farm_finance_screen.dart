@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'farm_list_screen.dart';
+import '../models/farm_model.dart';
+import '../services/farm_service.dart';
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 
@@ -44,12 +46,17 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
   int _tab = 0; // 0=Pengaturan 1=Pengeluaran 2=Ringkasan
 
   // ── Pengaturan state ──
-  final _jumlahAyamCtrl = TextEditingController(text: '1000');
-  final _modalCtrl = TextEditingController(text: '50000000');
-  final _hargaJualCtrl = TextEditingController(text: '25000');
-  final _biayaPakanCtrl = TextEditingController(text: '8000');
-  final _biayaOpsCtrl = TextEditingController(text: '3000000');
-  final _targetHenDayCtrl = TextEditingController(text: '80');
+  bool _settingLoading = true;
+  bool _settingSaving = false;
+  String? _settingError;
+  FarmModel? _farmModel;
+
+  final _jumlahAyamCtrl = TextEditingController();
+  final _modalCtrl = TextEditingController();
+  final _hargaJualCtrl = TextEditingController();
+  final _biayaPakanCtrl = TextEditingController();
+  final _biayaOpsCtrl = TextEditingController();
+  final _targetHenDayCtrl = TextEditingController();
 
   // ── Pengeluaran state ──
   DateTime _expDate = DateTime.now();
@@ -90,6 +97,44 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _loadFarmDetail();
+  }
+
+  Future<void> _loadFarmDetail() async {
+    setState(() {
+      _settingLoading = true;
+      _settingError = null;
+    });
+    final (model, error) = await FarmService.instance.getFarm(widget.farm.id);
+    if (!mounted) return;
+    if (error != null) {
+      setState(() {
+        _settingError = error;
+        _settingLoading = false;
+      });
+      return;
+    }
+    _farmModel = model;
+    _jumlahAyamCtrl.text = _formatThousands(model!.chickenCount.toString());
+    _modalCtrl.text = _formatThousands(
+      double.tryParse(model.capital)?.toStringAsFixed(0) ?? '0',
+    );
+    _hargaJualCtrl.text = _formatThousands(
+      double.tryParse(model.priceSell)?.toStringAsFixed(0) ?? '0',
+    );
+    _biayaPakanCtrl.text = _formatThousands(
+      double.tryParse(model.priceFeed)?.toStringAsFixed(0) ?? '0',
+    );
+    _biayaOpsCtrl.text = _formatThousands(
+      double.tryParse(model.priceOps)?.toStringAsFixed(0) ?? '0',
+    );
+    _targetHenDayCtrl.text = _formatThousands(model.eggTarget.toString());
+    setState(() => _settingLoading = false);
+  }
+
+  @override
   void dispose() {
     _jumlahAyamCtrl.dispose();
     _modalCtrl.dispose();
@@ -100,6 +145,19 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
     _expAmountCtrl.dispose();
     _expNoteCtrl.dispose();
     super.dispose();
+  }
+
+  String _formatThousands(String numStr) {
+    final digits = numStr.replaceAll('.', '');
+    if (digits.isEmpty) return '';
+    final buf = StringBuffer();
+    int count = 0;
+    for (int i = digits.length - 1; i >= 0; i--) {
+      if (count > 0 && count % 3 == 0) buf.write('.');
+      buf.write(digits[i]);
+      count++;
+    }
+    return buf.toString().split('').reversed.join();
   }
 
   String _formatDate(DateTime d) =>
@@ -262,8 +320,86 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
     );
   }
 
+  Future<void> _savePengaturan() async {
+    if (_farmModel == null) return;
+    setState(() => _settingSaving = true);
+    final (_, error) = await FarmService.instance.updateFarm(widget.farm.id, {
+      'name': _farmModel!.name,
+      'location': _farmModel!.location ?? '',
+      'periode': _farmModel!.periode,
+      'chicken_count':
+          int.tryParse(_jumlahAyamCtrl.text.trim().replaceAll('.', '')) ?? 0,
+      'capital':
+          double.tryParse(_modalCtrl.text.trim().replaceAll('.', '')) ?? 0,
+      'price_sell':
+          double.tryParse(_hargaJualCtrl.text.trim().replaceAll('.', '')) ?? 0,
+      'price_feed':
+          double.tryParse(_biayaPakanCtrl.text.trim().replaceAll('.', '')) ?? 0,
+      'price_ops':
+          double.tryParse(_biayaOpsCtrl.text.trim().replaceAll('.', '')) ?? 0,
+      'egg_target':
+          int.tryParse(_targetHenDayCtrl.text.trim().replaceAll('.', '')) ?? 0,
+    });
+    if (!mounted) return;
+    setState(() => _settingSaving = false);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pengaturan disimpan!'),
+          backgroundColor: Color(0xFFFF6B00),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      _loadFarmDetail();
+    }
+  }
+
   // ─── Pengaturan ──────────────────────────────────────────────────────────────
   Widget _buildPengaturan() {
+    if (_settingLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 40),
+          child: CircularProgressIndicator(color: Color(0xFFFF6B00)),
+        ),
+      );
+    }
+    if (_settingError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _settingError!,
+                style: const TextStyle(color: Color(0xFF888888), fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: _loadFarmDetail,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF6B00),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Coba Lagi'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return _card([
       _sectionHeader(Icons.radio_button_checked_outlined, 'Pengaturan Usaha'),
       const SizedBox(height: 16),
@@ -313,22 +449,20 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
         width: double.infinity,
         height: 50,
         child: ElevatedButton.icon(
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Pengaturan disimpan!'),
-                backgroundColor: const Color(0xFFFF6B00),
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            );
-          },
-          icon: const Icon(Icons.save_outlined, color: Colors.white, size: 18),
-          label: const Text(
-            'Simpan Pengaturan',
-            style: TextStyle(
+          onPressed: _settingSaving ? null : _savePengaturan,
+          icon: _settingSaving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+              : const Icon(Icons.save_outlined, color: Colors.white, size: 18),
+          label: Text(
+            _settingSaving ? 'Menyimpan...' : 'Simpan Pengaturan',
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 15,
               fontWeight: FontWeight.w700,
@@ -361,12 +495,8 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
         const SizedBox(height: 6),
         TextFormField(
           controller: ctrl,
-          keyboardType: TextInputType.numberWithOptions(decimal: decimal),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(
-              decimal ? RegExp(r'^\d*\.?\d*') : RegExp(r'^\d*'),
-            ),
-          ],
+          keyboardType: TextInputType.number,
+          inputFormatters: [_ThousandSeparatorFormatter()],
           decoration: InputDecoration(
             filled: true,
             fillColor: const Color(0xFFF5F5F5),
@@ -789,10 +919,13 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
 
   // ─── Ringkasan ───────────────────────────────────────────────────────────────
   Widget _buildRingkasan() {
-    final modal = double.tryParse(_modalCtrl.text) ?? 50000000;
-    final hargaJual = double.tryParse(_hargaJualCtrl.text) ?? 25000;
-    final biayaPakan = double.tryParse(_biayaPakanCtrl.text) ?? 8000;
-    final jumlahAyam = double.tryParse(_jumlahAyamCtrl.text) ?? 1000;
+    final modal = double.tryParse(_modalCtrl.text.replaceAll('.', '')) ?? 0;
+    final hargaJual =
+        double.tryParse(_hargaJualCtrl.text.replaceAll('.', '')) ?? 0;
+    final biayaPakan =
+        double.tryParse(_biayaPakanCtrl.text.replaceAll('.', '')) ?? 0;
+    final jumlahAyam =
+        double.tryParse(_jumlahAyamCtrl.text.replaceAll('.', '')) ?? 0;
 
     // dummy: pendapatan dari 7 hari x 800 telur x harga
     const totalEggs = 5517.0; // 7 hari
@@ -1064,4 +1197,28 @@ class _NavItem {
   final IconData icon;
   final String label;
   const _NavItem(this.icon, this.label);
+}
+
+class _ThousandSeparatorFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll('.', '');
+    if (digits.isEmpty) return newValue.copyWith(text: '');
+    if (int.tryParse(digits) == null) return oldValue;
+    final buf = StringBuffer();
+    int count = 0;
+    for (int i = digits.length - 1; i >= 0; i--) {
+      if (count > 0 && count % 3 == 0) buf.write('.');
+      buf.write(digits[i]);
+      count++;
+    }
+    final formatted = buf.toString().split('').reversed.join();
+    return newValue.copyWith(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
 }

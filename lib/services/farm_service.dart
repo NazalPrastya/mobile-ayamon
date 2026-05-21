@@ -39,6 +39,36 @@ class FarmService {
     }
   }
 
+  Future<(FarmModel?, String?)> getFarm(String id) async {
+    final token = await AuthService.instance.getToken();
+    if (token == null)
+      return (null, 'Sesi tidak ditemukan. Silakan login ulang.');
+
+    try {
+      final response = await http
+          .get(
+            Uri.parse(ApiConfig.farmUrl(id)),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200 && body['status'] == 'success') {
+        return (FarmModel.fromJson(body['data'] as Map<String, dynamic>), null);
+      }
+
+      return (null, (body['message'] as String?) ?? 'Gagal mengambil data.');
+    } on TimeoutException {
+      return (null, 'Request timeout. Pastikan server sedang berjalan.');
+    } catch (e) {
+      return (null, 'Error: ${e.toString()}');
+    }
+  }
+
   Future<(FarmModel?, String?)> createFarm(Map<String, dynamic> data) async {
     final token = await AuthService.instance.getToken();
     if (token == null)
