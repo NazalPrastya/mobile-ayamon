@@ -62,6 +62,16 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
   final _biayaOpsCtrl = TextEditingController();
   final _targetHenDayCtrl = TextEditingController();
 
+  // ── Ringkasan state ──
+  bool _ringkasanLoading = false;
+  String? _ringkasanError;
+  double _rsIncome = 0;
+  double _rsRecordedExpenses = 0;
+  double _rsFeedCost = 0;
+  double _rsCapital = 0;
+  double _rsNet = 0;
+  List<Map<String, dynamic>> _rsCategoryBreakdown = [];
+
   // ── Pengeluaran state ──
   DateTime _expDate = DateTime.now();
   // category map: id → display value
@@ -84,6 +94,7 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
     _loadFarmDetail();
     _loadCategories();
     _loadExpenses();
+    _loadRingkasan();
   }
 
   Future<void> _loadCategories() async {
@@ -182,6 +193,65 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
         setState(() {
           _expensesError = e.toString();
           _expensesLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadRingkasan() async {
+    setState(() {
+      _ringkasanLoading = true;
+      _ringkasanError = null;
+    });
+    final token = await AuthService.instance.getToken();
+    if (token == null) return;
+    try {
+      final response = await http.get(
+        Uri.parse(ApiConfig.dashboardFinancialSummaryUrl(widget.farm.id)),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final summary = body['data']['summary'] as Map<String, dynamic>? ?? {};
+        final cats =
+            body['data']['expense_by_category'] as List<dynamic>? ?? [];
+        setState(() {
+          _rsIncome = (summary['total_income'] as num?)?.toDouble() ?? 0;
+          _rsRecordedExpenses =
+              double.tryParse(
+                summary['total_recorded_expenses']?.toString() ?? '0',
+              ) ??
+              0;
+          _rsFeedCost = (summary['total_feed_cost'] as num?)?.toDouble() ?? 0;
+          _rsCapital =
+              double.tryParse(summary['capital']?.toString() ?? '0') ?? 0;
+          _rsNet = (summary['net_after_capital'] as num?)?.toDouble() ?? 0;
+          _rsCategoryBreakdown = cats
+              .map<Map<String, dynamic>>(
+                (e) => {
+                  'label': e['category_label']?.toString() ?? '',
+                  'total': (e['total'] as num?)?.toDouble() ?? 0,
+                  'percent': (e['percent'] as num?)?.toDouble() ?? 0,
+                },
+              )
+              .toList();
+          _ringkasanLoading = false;
+        });
+      } else {
+        setState(() {
+          _ringkasanError = 'Gagal memuat ringkasan (${response.statusCode})';
+          _ringkasanLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _ringkasanError = e.toString();
+          _ringkasanLoading = false;
         });
       }
     }
@@ -1538,79 +1608,96 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
 
   // ─── Ringkasan ───────────────────────────────────────────────────────────────
   Widget _buildRingkasan() {
-    final modal = double.tryParse(_modalCtrl.text.replaceAll('.', '')) ?? 0;
-    final hargaJual =
-        double.tryParse(_hargaJualCtrl.text.replaceAll('.', '')) ?? 0;
-    final biayaPakan =
-        double.tryParse(_biayaPakanCtrl.text.replaceAll('.', '')) ?? 0;
-    final jumlahAyam =
-        double.tryParse(_jumlahAyamCtrl.text.replaceAll('.', '')) ?? 0;
-
-    // dummy: pendapatan dari 7 hari x 800 telur x harga
-    const totalEggs = 5517.0; // 7 hari
-    const avgWeightPerEgg = 0.062; // kg
-    final totalPendapatan = totalEggs * avgWeightPerEgg * hargaJual;
-
-    // biaya pakan otomatis: jumlah ayam * 0.12 kg/hari * 7 hari * harga
-    final totalFeedCost = jumlahAyam * 0.12 * 7 * biayaPakan;
-
-    final pengeluaranTercatat = _expenses.fold(0.0, (s, e) => s + e.amount);
-
-    final net = totalPendapatan - pengeluaranTercatat - totalFeedCost - modal;
-
-    // Kategori chart
-    final Map<String, double> catTotals = {};
-    for (final e in _expenses) {
-      catTotals[e.category] = (catTotals[e.category] ?? 0) + e.amount;
-    }
-    // Add feed as category
-    catTotals['Pakan'] = (catTotals['Pakan'] ?? 0) + totalFeedCost;
-
-    final grandTotal = catTotals.values.fold(0.0, (a, b) => a + b);
-
-    final List<PieChartSectionData> sections = [];
-    catTotals.forEach((cat, val) {
-      sections.add(
-        PieChartSectionData(
-          value: val,
-          color: _categoryColor(cat),
-          radius: 70,
-          showTitle: false,
+    if (_ringkasanLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 40),
+          child: CircularProgressIndicator(color: Color(0xFFFF6B00)),
         ),
       );
-    });
+    }
+    if (_ringkasanError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _ringkasanError!,
+                style: const TextStyle(color: Color(0xFF888888), fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: _loadRingkasan,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF6B00),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Coba Lagi'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Build pie sections from API data
+    final sections = _rsCategoryBreakdown
+        .where((e) => (e['total'] as double) > 0)
+        .map(
+          (e) => PieChartSectionData(
+            value: e['total'] as double,
+            color: _categoryColor(e['label'] as String),
+            radius: 70,
+            showTitle: false,
+          ),
+        )
+        .toList();
 
     return Column(
       children: [
-        // Summary card
         _card([
-          _sectionHeader(Icons.monitor_outlined, 'Ringkasan Keuangan'),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _sectionHeader(Icons.monitor_outlined, 'Ringkasan Keuangan'),
+              GestureDetector(
+                onTap: _loadRingkasan,
+                child: const Icon(
+                  Icons.refresh,
+                  size: 18,
+                  color: Color(0xFFAAAAAA),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           _summaryRow(
             'Total Pendapatan',
-            _formatRp(totalPendapatan),
+            _formatRp(_rsIncome),
             const Color(0xFF43A047),
           ),
           const Divider(height: 20, color: Color(0xFFF5F5F5)),
           _summaryRow(
             'Pengeluaran Tercatat',
-            _formatRp(pengeluaranTercatat),
+            _formatRp(_rsRecordedExpenses),
             null,
           ),
           const Divider(height: 20, color: Color(0xFFF5F5F5)),
-          _summaryRow('Biaya Pakan (otomatis)', _formatRp(totalFeedCost), null),
+          _summaryRow('Biaya Pakan (otomatis)', _formatRp(_rsFeedCost), null),
           const Divider(height: 20, color: Color(0xFFF5F5F5)),
-          _summaryRow('Modal Awal', _formatRp(modal), null),
+          _summaryRow('Modal Awal', _formatRp(_rsCapital), null),
           const Divider(height: 20, color: Color(0xFFF5F5F5)),
           _summaryRow(
             'Net (setelah modal)',
-            _formatRp(net),
-            net >= 0 ? const Color(0xFF43A047) : const Color(0xFFE53935),
+            _formatRp(_rsNet),
+            _rsNet >= 0 ? const Color(0xFF43A047) : const Color(0xFFE53935),
             bold: true,
           ),
         ]),
         const SizedBox(height: 16),
-        // Pie chart card
         if (sections.isNotEmpty)
           _card([
             _sectionHeader(
@@ -1632,32 +1719,34 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
             Wrap(
               spacing: 12,
               runSpacing: 8,
-              children: catTotals.entries.map((e) {
-                final pct = grandTotal > 0
-                    ? (e.value / grandTotal * 100).round()
-                    : 0;
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: _categoryColor(e.key),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${e.key} $pct%',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF666666),
-                      ),
-                    ),
-                  ],
-                );
-              }).toList(),
+              children: _rsCategoryBreakdown
+                  .where((e) => (e['total'] as double) > 0)
+                  .map((e) {
+                    final label = e['label'] as String;
+                    final pct = (e['percent'] as double).round();
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: _categoryColor(label),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$label $pct%',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF666666),
+                          ),
+                        ),
+                      ],
+                    );
+                  })
+                  .toList(),
             ),
           ]),
       ],
