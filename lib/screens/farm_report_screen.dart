@@ -1,20 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import '../models/daily_production_model.dart';
-import '../services/daily_production_service.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../services/auth_service.dart';
+import '../config/api_config.dart';
 import 'farm_list_screen.dart';
 
-// ─── Monthly aggregation ──────────────────────────────────────────────────────
+// ─── Models ───────────────────────────────────────────────────────────────────
 
-class _MonthData {
-  final String label; // e.g. "2026-05"
-  int totalEgg = 0;
-  double totalWeight = 0;
-  int totalDeath = 0;
-  int days = 0;
-  double totalFeed = 0;
+class _ReportSummary {
+  final int totalEggs;
+  final double totalEggWeight;
+  final double totalIncome;
+  final double totalCost;
+  final double netProfit;
+  final int totalDeath;
+  final double deathRate;
+  final int daysLogged;
 
-  _MonthData(this.label);
+  const _ReportSummary({
+    required this.totalEggs,
+    required this.totalEggWeight,
+    required this.totalIncome,
+    required this.totalCost,
+    required this.netProfit,
+    required this.totalDeath,
+    required this.deathRate,
+    required this.daysLogged,
+  });
+}
+
+class _MonthlyPoint {
+  final String month;
+  final double value;
+  const _MonthlyPoint(this.month, this.value);
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -40,7 +59,10 @@ class FarmReportScreen extends StatefulWidget {
 class _FarmReportScreenState extends State<FarmReportScreen> {
   bool _loading = true;
   String? _error;
-  List<DailyProductionModel> _all = [];
+  _ReportSummary? _summary;
+  List<_MonthlyPoint> _monthlyProduction = [];
+  List<_MonthlyPoint> _monthlyHenDay = [];
+  List<_MonthlyPoint> _monthlyDeath = [];
 
   @override
   void initState() {
@@ -52,71 +74,85 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
     setState(() {
       _loading = true;
       _error = null;
-      _all = [];
     });
+    final token = await AuthService.instance.getToken();
+    if (token == null) {
+      setState(() {
+        _error = 'Token tidak ditemukan, silakan login ulang.';
+        _loading = false;
+      });
+      return;
+    }
+    try {
+      final response = await http
+          .get(
+            Uri.parse(ApiConfig.dashboardReportUrl(widget.farm.id)),
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final data = body['data'] as Map<String, dynamic>;
+        final s = data['summary'] as Map<String, dynamic>;
+        final charts = data['charts'] as Map<String, dynamic>;
 
-    int page = 1;
-    int lastPage = 1;
-    final buffer = <DailyProductionModel>[];
-
-    do {
-      final result = await DailyProductionService.instance.getList(
-        widget.farm.id,
-        page: page,
-      );
-      final list = result.$1;
-      final lp = result.$2;
-      final err = result.$3;
-
-      if (err != null) {
         setState(() {
-          _error = err;
+          _summary = _ReportSummary(
+            totalEggs: (s['total_eggs'] as num?)?.toInt() ?? 0,
+            totalEggWeight: (s['total_egg_weight'] as num?)?.toDouble() ?? 0,
+            totalIncome: (s['total_income'] as num?)?.toDouble() ?? 0,
+            totalCost: (s['total_cost'] as num?)?.toDouble() ?? 0,
+            netProfit: (s['net_profit'] as num?)?.toDouble() ?? 0,
+            totalDeath: (s['total_death'] as num?)?.toInt() ?? 0,
+            deathRate: (s['death_rate'] as num?)?.toDouble() ?? 0,
+            daysLogged: (s['days_logged'] as num?)?.toInt() ?? 0,
+          );
+          _monthlyProduction =
+              (charts['monthly_production'] as List<dynamic>? ?? [])
+                  .map(
+                    (e) => _MonthlyPoint(
+                      e['month']?.toString() ?? '',
+                      (e['egg_count'] as num?)?.toDouble() ?? 0,
+                    ),
+                  )
+                  .toList();
+          _monthlyHenDay = (charts['monthly_hen_day'] as List<dynamic>? ?? [])
+              .map(
+                (e) => _MonthlyPoint(
+                  e['month']?.toString() ?? '',
+                  (e['hen_day'] as num?)?.toDouble() ?? 0,
+                ),
+              )
+              .toList();
+          _monthlyDeath = (charts['monthly_death'] as List<dynamic>? ?? [])
+              .map(
+                (e) => _MonthlyPoint(
+                  e['month']?.toString() ?? '',
+                  (e['chicken_death'] as num?)?.toDouble() ?? 0,
+                ),
+              )
+              .toList();
           _loading = false;
         });
-        return;
+      } else {
+        setState(() {
+          _error = 'Gagal memuat laporan (${response.statusCode})';
+          _loading = false;
+        });
       }
-      buffer.addAll(list ?? []);
-      lastPage = lp ?? 1;
-      page++;
-    } while (page <= lastPage);
-
-    setState(() {
-      _all = buffer;
-      _loading = false;
-    });
-  }
-
-  // ─── Aggregations ─────────────────────────────────────────────────────────────
-
-  int get _totalEgg => _all.fold(0, (s, e) => s + e.eggCount);
-  double get _totalWeight => _all.fold(0.0, (s, e) => s + e.eggWeight);
-  int get _totalDeath => _all.fold(0, (s, e) => s + e.chickenDeath);
-  int get _days => _all.length;
-  double get _avgEggPerDay => _days == 0 ? 0 : _totalEgg / _days;
-  double get _totalFeed => _all.fold(0.0, (s, e) => s + e.feedSold);
-
-  List<_MonthData> get _byMonth {
-    final map = <String, _MonthData>{};
-    for (final e in _all) {
-      try {
-        final d = DateTime.parse(e.date);
-        final key = '${d.year}-${d.month.toString().padLeft(2, '0')}';
-        map.putIfAbsent(key, () => _MonthData(key));
-        map[key]!.totalEgg += e.eggCount;
-        map[key]!.totalWeight += e.eggWeight;
-        map[key]!.totalDeath += e.chickenDeath;
-        map[key]!.days += 1;
-        map[key]!.totalFeed += e.feedSold;
-      } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
-    final sorted = map.values.toList()
-      ..sort((a, b) => a.label.compareTo(b.label));
-    return sorted;
   }
-
-  // hen-day: no chickenCount in Farm — display N/A or show raw avg
-  // We'll just show (egg/day) as a proxy percentage (egg per day / 1000 * 100)
-  // Actually show raw avg eggs per day on the second chart instead.
 
   // ─── Formatter ────────────────────────────────────────────────────────────────
 
@@ -128,6 +164,16 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
       buf.write(s[i]);
     }
     return buf.toString();
+  }
+
+  String _fmtRp(double v) {
+    final s = v.abs().toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
+      buf.write(s[i]);
+    }
+    return '${v < 0 ? '-' : ''}Rp ${buf.toString()}';
   }
 
   @override
@@ -204,7 +250,8 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
   }
 
   Widget _buildBody() {
-    final monthly = _byMonth;
+    final s = _summary!;
+    final avgPerDay = s.daysLogged > 0 ? s.totalEggs / s.daysLogged : 0.0;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
       children: [
@@ -222,14 +269,14 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
           style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
         ),
         const SizedBox(height: 20),
-        _buildSummaryGrid(),
+        _buildSummaryGrid(s, avgPerDay),
         const SizedBox(height: 16),
-        if (monthly.isNotEmpty) ...[
-          _buildBarChart(monthly),
+        if (_monthlyProduction.isNotEmpty) ...[
+          _buildBarChart(_monthlyProduction),
           const SizedBox(height: 16),
-          _buildAvgEggChart(monthly),
+          _buildHenDayChart(_monthlyHenDay),
           const SizedBox(height: 16),
-          _buildDeathChart(monthly),
+          _buildDeathChart(_monthlyDeath),
         ] else
           _emptyCard(),
       ],
@@ -238,45 +285,43 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
 
   // ─── Summary Grid ─────────────────────────────────────────────────────────────
 
-  Widget _buildSummaryGrid() {
+  Widget _buildSummaryGrid(_ReportSummary s, double avgPerDay) {
     final items = [
       _Stat(
         label: 'Total Telur',
-        value: _fmt(_totalEgg.toDouble()),
-        sub: '${_totalWeight.toStringAsFixed(1)} kg',
+        value: _fmt(s.totalEggs.toDouble()),
+        sub: '${s.totalEggWeight.toStringAsFixed(1)} kg',
         color: const Color(0xFF1A1A1A),
       ),
       _Stat(
         label: 'Rata-rata/hari',
-        value: _fmt(_avgEggPerDay),
+        value: _fmt(avgPerDay),
         sub: 'butir',
         color: const Color(0xFF1A1A1A),
       ),
       _Stat(
-        label: 'Total Pakan',
-        value: _totalFeed.toStringAsFixed(1),
-        sub: 'kg',
-        color: const Color(0xFF1A1A1A),
+        label: 'Total Pendapatan',
+        value: _fmtRp(s.totalIncome),
+        color: const Color(0xFF43A047),
       ),
       _Stat(
-        label: 'Total Berat Telur',
-        value: _totalWeight.toStringAsFixed(1),
-        sub: 'kg',
-        color: const Color(0xFF1A1A1A),
+        label: 'Net Profit',
+        value: _fmtRp(s.netProfit),
+        color: s.netProfit >= 0
+            ? const Color(0xFF43A047)
+            : const Color(0xFFE53935),
       ),
       _Stat(
         label: 'Kematian',
-        value: _totalDeath.toString(),
-        sub: _days > 0
-            ? '${(_totalDeath / (_days.toDouble() + 1) * 100).toStringAsFixed(2)}%'
-            : '0.0%',
-        color: _totalDeath > 0
+        value: s.totalDeath.toString(),
+        sub: '${s.deathRate.toStringAsFixed(1)}%',
+        color: s.totalDeath > 0
             ? const Color(0xFFE53935)
             : const Color(0xFF1A1A1A),
       ),
       _Stat(
         label: 'Hari Tercatat',
-        value: _days.toString(),
+        value: s.daysLogged.toString(),
         color: const Color(0xFF1A1A1A),
       ),
     ];
@@ -322,7 +367,7 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
           Text(
             s.value,
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.w800,
               color: s.color,
             ),
@@ -341,13 +386,11 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
 
   // ─── Bar Chart: Produksi Bulanan ─────────────────────────────────────────────
 
-  Widget _buildBarChart(List<_MonthData> monthly) {
+  Widget _buildBarChart(List<_MonthlyPoint> monthly) {
     final maxY =
-        (monthly
-                    .map((m) => m.totalEgg.toDouble())
-                    .reduce((a, b) => a > b ? a : b) *
-                1.25)
-            .ceilToDouble();
+        (monthly.map((m) => m.value).reduce((a, b) => a > b ? a : b) * 1.25)
+            .ceilToDouble()
+            .clamp(1.0, double.infinity);
 
     return _chartCard(
       icon: Icons.bar_chart,
@@ -363,7 +406,7 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
                 x: e.key,
                 barRods: [
                   BarChartRodData(
-                    toY: e.value.totalEgg.toDouble(),
+                    toY: e.value.value,
                     color: const Color(0xFFFF6B00),
                     width: monthly.length == 1 ? 40 : 24,
                     borderRadius: const BorderRadius.vertical(
@@ -398,7 +441,7 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
                     return Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        monthly[idx].label,
+                        monthly[idx].month,
                         style: const TextStyle(
                           fontSize: 10,
                           color: Color(0xFF888888),
@@ -427,7 +470,7 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
                 getTooltipColor: (_) =>
                     const Color(0xFF1A1A1A).withOpacity(0.85),
                 getTooltipItem: (group, _, rod, _) => BarTooltipItem(
-                  '${monthly[group.x].label}\n${_fmt(rod.toY)} butir',
+                  '${monthly[group.x].month}\n${_fmt(rod.toY)} butir',
                   const TextStyle(color: Colors.white, fontSize: 12),
                 ),
               ),
@@ -438,13 +481,14 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
     );
   }
 
-  // ─── Line Chart: Rata-rata Produksi Harian ────────────────────────────────────
+  // ─── Line Chart: Hen-day Bulanan ──────────────────────────────────────────────
 
-  Widget _buildAvgEggChart(List<_MonthData> monthly) {
-    final spots = monthly.asMap().entries.map((e) {
-      final avg = e.value.days == 0 ? 0.0 : e.value.totalEgg / e.value.days;
-      return FlSpot(e.key.toDouble(), avg);
-    }).toList();
+  Widget _buildHenDayChart(List<_MonthlyPoint> monthly) {
+    final spots = monthly
+        .asMap()
+        .entries
+        .map((e) => FlSpot(e.key.toDouble(), e.value.value))
+        .toList();
 
     final maxY = spots.isEmpty
         ? 100.0
@@ -454,7 +498,7 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
 
     return _chartCard(
       icon: Icons.show_chart,
-      title: 'Rata-rata Produksi Harian',
+      title: 'Hen-day Bulanan (%)',
       child: SizedBox(
         height: 220,
         child: LineChart(
@@ -482,7 +526,7 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
                 ),
               ),
             ],
-            titlesData: _lineTitles(monthly.map((m) => m.label).toList()),
+            titlesData: _lineTitles(monthly.map((m) => m.month).toList()),
             gridData: _lineGrid(),
             borderData: FlBorderData(show: false),
             lineTouchData: LineTouchData(
@@ -491,7 +535,7 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
                     const Color(0xFF1A1A1A).withOpacity(0.85),
                 getTooltipItems: (touched) => touched.map((s) {
                   return LineTooltipItem(
-                    '${monthly[s.x.toInt()].label}\n${s.y.toStringAsFixed(1)} butir/hari',
+                    '${monthly[s.x.toInt()].month}\n${s.y.toStringAsFixed(1)}%',
                     const TextStyle(color: Colors.white, fontSize: 12),
                   );
                 }).toList(),
@@ -505,16 +549,17 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
 
   // ─── Line Chart: Kematian Bulanan ─────────────────────────────────────────────
 
-  Widget _buildDeathChart(List<_MonthData> monthly) {
-    final maxDeathRaw = monthly
-        .map((m) => m.totalDeath.toDouble())
-        .reduce((a, b) => a > b ? a : b);
-    final maxY = (maxDeathRaw * 1.3).ceilToDouble().clamp(1.0, double.infinity);
+  Widget _buildDeathChart(List<_MonthlyPoint> monthly) {
+    final maxY = monthly.isEmpty
+        ? 1.0
+        : (monthly.map((m) => m.value).reduce((a, b) => a > b ? a : b) * 1.3)
+              .ceilToDouble()
+              .clamp(1.0, double.infinity);
 
     final spots = monthly
         .asMap()
         .entries
-        .map((e) => FlSpot(e.key.toDouble(), e.value.totalDeath.toDouble()))
+        .map((e) => FlSpot(e.key.toDouble(), e.value.value))
         .toList();
 
     return _chartCard(
@@ -547,7 +592,7 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
                 ),
               ),
             ],
-            titlesData: _lineTitles(monthly.map((m) => m.label).toList()),
+            titlesData: _lineTitles(monthly.map((m) => m.month).toList()),
             gridData: _lineGrid(),
             borderData: FlBorderData(show: false),
             lineTouchData: LineTouchData(
@@ -556,7 +601,7 @@ class _FarmReportScreenState extends State<FarmReportScreen> {
                     const Color(0xFF1A1A1A).withOpacity(0.85),
                 getTooltipItems: (touched) => touched.map((s) {
                   return LineTooltipItem(
-                    '${monthly[s.x.toInt()].label}\n${s.y.toInt()} ekor',
+                    '${monthly[s.x.toInt()].month}\n${s.y.toInt()} ekor',
                     const TextStyle(color: Colors.white, fontSize: 12),
                   );
                 }).toList(),

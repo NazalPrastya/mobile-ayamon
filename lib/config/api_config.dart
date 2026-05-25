@@ -53,4 +53,6 @@ class ApiConfig {
       '$baseUrl/api/dashboard/expenses?farm_id=$farmId';
   static String dashboardFinancialSummaryUrl(String farmId) =>
       '$baseUrl/api/dashboard/financial-summary?farm_id=$farmId';
+  static String dashboardReportUrl(String farmId) =>
+      '$baseUrl/api/dashboard/report?farm_id=$farmId';
 }

@@ -259,28 +259,32 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
 
     final stats = [
       _StatItem(
-        '🥚',
+        Icons.egg_outlined,
+        const Color(0xFFFF6B00),
         'Telur Hari Ini',
         d != null ? '${d.eggCount}' : '-',
         d != null ? '${d.eggWeightKg.toStringAsFixed(1)} kg' : '-',
         null,
       ),
       _StatItem(
-        '📊',
+        Icons.track_changes_outlined,
+        const Color(0xFF1E88E5),
         'Hen-day',
         d != null ? '${d.henDayPercent.toStringAsFixed(1)}%' : '-',
         d != null ? 'Target ${d.henDayTarget.toStringAsFixed(1)}%' : '-',
         null,
       ),
       _StatItem(
-        '🐔',
+        Icons.flutter_dash,
+        const Color(0xFF43A047),
         'Ayam Hidup',
         d != null ? '${d.chickenAlive}' : '-',
         d != null ? 'dari ${d.chickenCount} ekor' : '-',
         null,
       ),
       _StatItem(
-        '💀',
+        Icons.trending_down_rounded,
+        const Color(0xFFE53935),
         'Kematian',
         d != null ? '${d.chickenDeath}' : '-',
         d != null && d.chickenCount > 0
@@ -289,14 +293,16 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
         null,
       ),
       _StatItem(
-        '💰',
+        Icons.account_balance_wallet_outlined,
+        const Color(0xFF8E24AA),
         'Pendapatan',
         d != null ? fmtRp(d.income) : '-',
         d != null ? fmtRp(d.netIncome) : '-',
         d != null && d.netIncome < 0 ? const Color(0xFFE53935) : null,
       ),
       _StatItem(
-        '📅',
+        Icons.calendar_today_outlined,
+        const Color(0xFF00897B),
         'Data Hari',
         r != null
             ? '${r.totalIncome > 0 ? r.totalIncome.toInt() : d?.totalEntry ?? 0}'
@@ -340,7 +346,7 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
         children: [
           Row(
             children: [
-              Text(item.emoji, style: const TextStyle(fontSize: 14)),
+              Icon(item.icon, size: 14, color: item.iconColor),
               const SizedBox(width: 6),
               Text(
                 item.label,
@@ -881,12 +887,20 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
 // ─── Data Models ──────────────────────────────────────────────────────────────
 
 class _StatItem {
-  final String emoji;
+  final IconData icon;
+  final Color iconColor;
   final String label;
   final String value;
   final String sub;
   final Color? subColor;
-  const _StatItem(this.emoji, this.label, this.value, this.sub, this.subColor);
+  const _StatItem(
+    this.icon,
+    this.iconColor,
+    this.label,
+    this.value,
+    this.sub,
+    this.subColor,
+  );
 }
 
 class _NavItem {
