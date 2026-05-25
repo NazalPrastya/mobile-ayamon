@@ -41,4 +41,14 @@ class ApiConfig {
       '$baseUrl/api/expenses?farm_id=$farmId&page=$page';
   static String expenseUrl(String id) => '$baseUrl/api/expense/$id';
   static String get createExpenseUrl => '$baseUrl/api/expense';
+
+  // ── Dashboard ──────────────────────────────────────────────────────────────
+  static String dashboardDailyProductionsUrl(String farmId) =>
+      '$baseUrl/api/dashboard/daily-productions?farm_id=$farmId';
+  static String dashboardProductivityUrl(String farmId, {int days = 7}) =>
+      '$baseUrl/api/dashboard/productivity?farm_id=$farmId&days=$days';
+  static String dashboardResumeUrl(String farmId) =>
+      '$baseUrl/api/dashboard/resume?farm_id=$farmId';
+  static String dashboardExpensesUrl(String farmId) =>
+      '$baseUrl/api/dashboard/expenses?farm_id=$farmId';
 }

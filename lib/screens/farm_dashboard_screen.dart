@@ -5,6 +5,7 @@ import 'farm_input_screen.dart';
 import 'farm_finance_screen.dart';
 import 'farm_schedule_screen.dart';
 import 'farm_report_screen.dart';
+import '../services/dashboard_service.dart';
 
 class FarmDashboardScreen extends StatefulWidget {
   final Farm farm;
@@ -17,45 +18,57 @@ class FarmDashboardScreen extends StatefulWidget {
 class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
   int _selectedIndex = 0;
 
-  // Dummy chart data – produktivitas 7 hari
-  final List<FlSpot> _chartSpots = const [
-    FlSpot(0, 780),
-    FlSpot(1, 795),
-    FlSpot(2, 788),
-    FlSpot(3, 800),
-    FlSpot(4, 792),
-    FlSpot(5, 785),
-    FlSpot(6, 769),
-  ];
+  // ── API state ──────────────────────────────────────────────────────────────
+  bool _loading = true;
+  DashboardDailyData? _daily;
+  DashboardResume? _resume;
+  DashboardExpensesData? _expensesData;
 
-  final List<String> _chartLabels = [
-    '05-02',
-    '05-03',
-    '05-04',
-    '05-05',
-    '05-06',
-    '05-07',
-    '05-08',
-  ];
+  // chart computed
+  List<FlSpot> _chartSpots = [];
+  List<String> _chartLabels = [];
 
-  final List<_Schedule> _schedules = const [
-    _Schedule('Vaksin ND', '2026-05-08', 'Vaksin', Colors.blue, true),
-    _Schedule(
-      'Vitamin B Kompleks',
-      '2026-05-08',
-      'Vitamin',
-      Colors.green,
-      true,
-    ),
-    _Schedule(
-      'Pembersihan Kandang',
-      '2026-05-11',
-      'Pembersihan',
-      Colors.brown,
-      true,
-    ),
-    _Schedule('Vaksin Gumboro', '2026-05-22', 'Vaksin', Colors.blue, false),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadAll();
+  }
+
+  Future<void> _loadAll() async {
+    setState(() => _loading = true);
+    final farmId = widget.farm.id;
+    final results = await Future.wait([
+      DashboardService.instance.fetchDailyData(farmId),
+      DashboardService.instance.fetchProductivity(farmId, days: 7),
+      DashboardService.instance.fetchResume(farmId),
+      DashboardService.instance.fetchExpenses(farmId),
+    ]);
+
+    final daily = results[0] as DashboardDailyData?;
+    final productivity = results[1] as List<ProductivityPoint>;
+    final resume = results[2] as DashboardResume?;
+    final expensesData = results[3] as DashboardExpensesData?;
+
+    // Build chart spots from productivity data
+    final spots = <FlSpot>[];
+    final labels = <String>[];
+    for (var i = 0; i < productivity.length; i++) {
+      spots.add(FlSpot(i.toDouble(), productivity[i].eggCount.toDouble()));
+      final parts = productivity[i].date.split('-');
+      labels.add(
+        parts.length >= 3 ? '${parts[1]}-${parts[2]}' : productivity[i].date,
+      );
+    }
+
+    setState(() {
+      _daily = daily;
+      _resume = resume;
+      _expensesData = expensesData;
+      _chartSpots = spots;
+      _chartLabels = labels;
+      _loading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -90,25 +103,34 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
         index: _selectedIndex,
         children: [
           // 0 – Dashboard
-          SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildAlertBanner(),
-                const SizedBox(height: 14),
-                _buildStatsGrid(),
-                const SizedBox(height: 16),
-                _buildChartCard(),
-                const SizedBox(height: 16),
-                _buildBepCard(),
-                const SizedBox(height: 16),
-                _buildScheduleCard(),
-                const SizedBox(height: 16),
-                _buildInputCard(),
-              ],
-            ),
-          ),
+          _loading
+              ? const Center(
+                  child: CircularProgressIndicator(color: Color(0xFFFF6B00)),
+                )
+              : RefreshIndicator(
+                  color: const Color(0xFFFF6B00),
+                  onRefresh: _loadAll,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildAlertBanner(),
+                        const SizedBox(height: 14),
+                        _buildStatsGrid(),
+                        const SizedBox(height: 16),
+                        _buildChartCard(),
+                        const SizedBox(height: 16),
+                        _buildBepCard(),
+                        const SizedBox(height: 16),
+                        _buildScheduleCard(),
+                        const SizedBox(height: 16),
+                        _buildInputCard(),
+                      ],
+                    ),
+                  ),
+                ),
           // 1 – Input
           FarmInputScreen(
             farm: widget.farm,
@@ -224,19 +246,64 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
 
   // ─── Stats Grid ─────────────────────────────────────────────────────────────
   Widget _buildStatsGrid() {
+    final d = _daily;
+    final r = _resume;
+
+    String fmtRp(double v) {
+      final abs = v.abs();
+      final s = abs >= 1000000
+          ? 'Rp ${(abs / 1000000).toStringAsFixed(1)} jt'
+          : 'Rp ${abs.toStringAsFixed(0)}';
+      return v < 0 ? '-$s' : s;
+    }
+
     final stats = [
-      _StatItem('🥚', 'Telur Hari Ini', '769', '47.7 kg', null),
-      _StatItem('📊', 'Hen-day (7hr)', '79.5%', 'Target 80%', null),
-      _StatItem('🐔', 'Ayam Hidup', '1.000', 'dari 1.000 ekor', null),
-      _StatItem('💀', 'Kematian', '0', '0.0%', null),
+      _StatItem(
+        '🥚',
+        'Telur Hari Ini',
+        d != null ? '${d.eggCount}' : '-',
+        d != null ? '${d.eggWeightKg.toStringAsFixed(1)} kg' : '-',
+        null,
+      ),
+      _StatItem(
+        '📊',
+        'Hen-day',
+        d != null ? '${d.henDayPercent.toStringAsFixed(1)}%' : '-',
+        d != null ? 'Target ${d.henDayTarget.toStringAsFixed(1)}%' : '-',
+        null,
+      ),
+      _StatItem(
+        '🐔',
+        'Ayam Hidup',
+        d != null ? '${d.chickenAlive}' : '-',
+        d != null ? 'dari ${d.chickenCount} ekor' : '-',
+        null,
+      ),
+      _StatItem(
+        '💀',
+        'Kematian',
+        d != null ? '${d.chickenDeath}' : '-',
+        d != null && d.chickenCount > 0
+            ? '${(d.chickenDeath / d.chickenCount * 100).toStringAsFixed(1)}%'
+            : '-',
+        null,
+      ),
       _StatItem(
         '💰',
         'Pendapatan',
-        'Rp 8.620.000',
-        'Rp -4.217.200',
-        const Color(0xFFE53935),
+        d != null ? fmtRp(d.income) : '-',
+        d != null ? fmtRp(d.netIncome) : '-',
+        d != null && d.netIncome < 0 ? const Color(0xFFE53935) : null,
       ),
-      _StatItem('📅', 'Data Hari', '7', 'total entry', null),
+      _StatItem(
+        '📅',
+        'Data Hari',
+        r != null
+            ? '${r.totalIncome > 0 ? r.totalIncome.toInt() : d?.totalEntry ?? 0}'
+            : (d != null ? '${d.totalEntry}' : '-'),
+        'total entry',
+        null,
+      ),
     ];
 
     return GridView.builder(
@@ -308,6 +375,11 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
 
   // ─── Chart ──────────────────────────────────────────────────────────────────
   Widget _buildChartCard() {
+    final maxY = _chartSpots.isEmpty
+        ? 100.0
+        : (_chartSpots.map((s) => s.y).reduce((a, b) => a > b ? a : b) * 1.2)
+              .clamp(10.0, double.infinity);
+    final interval = (maxY / 4).ceilToDouble().clamp(1.0, double.infinity);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -344,11 +416,11 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
             child: LineChart(
               LineChartData(
                 minY: 0,
-                maxY: 900,
+                maxY: maxY,
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
-                  horizontalInterval: 200,
+                  horizontalInterval: interval,
                   getDrawingHorizontalLine: (v) =>
                       FlLine(color: Colors.grey.shade200, strokeWidth: 1),
                 ),
@@ -357,7 +429,7 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      interval: 200,
+                      interval: interval,
                       reservedSize: 36,
                       getTitlesWidget: (v, _) => Text(
                         v.toInt().toString(),
@@ -427,7 +499,24 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
 
   // ─── BEP ────────────────────────────────────────────────────────────────────
   Widget _buildBepCard() {
-    const double progress = 0.137;
+    final r = _resume;
+    final progress = r != null
+        ? (r.bepProgressPercent / 100).clamp(0.0, 1.0)
+        : 0.0;
+
+    String fmtRp(double v) {
+      final abs = v.abs();
+      final s = abs >= 1000000
+          ? 'Rp ${(abs / 1000000).toStringAsFixed(2)} jt'
+          : 'Rp ${abs.toStringAsFixed(0)}';
+      return v < 0 ? '-$s' : s;
+    }
+
+    final capital = r?.capital ?? 0;
+    final totalIncome = r?.totalIncome ?? 0;
+    final bepRemaining = r?.bepRemaining ?? 0;
+    final bepDays = r?.bepEstimatedDays ?? 0;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -466,9 +555,9 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Progress: Rp 8.620.000',
-                style: TextStyle(fontSize: 13, color: Color(0xFF555555)),
+              Text(
+                'Progress: ${fmtRp(totalIncome)}',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF555555)),
               ),
               Text(
                 '${(progress * 100).toStringAsFixed(1)}%',
@@ -493,28 +582,39 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          const Text(
-            'Target modal: Rp 62.837.200',
-            style: TextStyle(fontSize: 12, color: Color(0xFF888888)),
+          Text(
+            'Target modal: ${fmtRp(capital)}',
+            style: const TextStyle(fontSize: 12, color: Color(0xFF888888)),
           ),
           const SizedBox(height: 4),
           RichText(
-            text: const TextSpan(
-              style: TextStyle(fontSize: 13, color: Color(0xFF1A1A1A)),
+            text: TextSpan(
+              style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A1A)),
               children: [
-                TextSpan(text: 'Sisa: '),
+                const TextSpan(text: 'Sisa: '),
                 TextSpan(
-                  text: 'Rp 54.217.200',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                  text: fmtRp(bepRemaining),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                TextSpan(text: ' · Est. '),
-                TextSpan(
-                  text: '50 hari lagi',
-                  style: TextStyle(
-                    color: Color(0xFFFF6B00),
-                    fontWeight: FontWeight.w700,
+                if (bepDays > 0) ...[
+                  const TextSpan(text: ' · Est. '),
+                  TextSpan(
+                    text: '$bepDays hari lagi',
+                    style: const TextStyle(
+                      color: Color(0xFFFF6B00),
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
+                ] else if (bepDays == 0 && r != null) ...[
+                  const TextSpan(text: ' · '),
+                  const TextSpan(
+                    text: 'BEP tercapai 🎉',
+                    style: TextStyle(
+                      color: Color(0xFF43A047),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -525,6 +625,18 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
 
   // ─── Schedule ───────────────────────────────────────────────────────────────
   Widget _buildScheduleCard() {
+    final schedules = _expensesData?.allSchedules ?? [];
+
+    // warna per tipe
+    Color typeColor(String type) {
+      final t = type.toLowerCase();
+      if (t.contains('vaksin') || t.contains('vaccine')) return Colors.blue;
+      if (t.contains('vitamin') || t.contains('obat')) return Colors.green;
+      if (t.contains('bersih') || t.contains('clean')) return Colors.brown;
+      if (t.contains('pakan') || t.contains('pakan')) return Colors.orange;
+      return const Color(0xFF9E9E9E);
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -556,65 +668,76 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          ...List.generate(_schedules.length, (i) {
-            final s = _schedules[i];
-            return Column(
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.circle, color: s.color, size: 10),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            s.name,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1A1A1A),
+          if (schedules.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: Text(
+                  'Tidak ada jadwal mendekati',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF888888)),
+                ),
+              ),
+            )
+          else
+            ...List.generate(schedules.length, (i) {
+              final s = schedules[i];
+              return Column(
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.circle, color: typeColor(s.type), size: 10),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              s.name.isNotEmpty ? s.name : s.type,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1A1A1A),
+                              ),
                             ),
-                          ),
-                          Text(
-                            '${s.date} · ${s.type}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF888888),
+                            Text(
+                              '${s.date} · ${s.type}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF888888),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: s.isUrgent
-                            ? const Color(0xFFFFF0F0)
-                            : const Color(0xFFFFF8F0),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        s.isUrgent ? 'Segera' : 'Soon',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: s.isUrgent
-                              ? const Color(0xFFE53935)
-                              : const Color(0xFFFF6B00),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                if (i < _schedules.length - 1)
-                  const Divider(height: 20, color: Color(0xFFF0F0F0)),
-              ],
-            );
-          }),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: s.isOverdue
+                              ? const Color(0xFFFFF0F0)
+                              : const Color(0xFFFFF8F0),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          s.isOverdue ? 'Terlambat' : 'Segera',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: s.isOverdue
+                                ? const Color(0xFFE53935)
+                                : const Color(0xFFFF6B00),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (i < schedules.length - 1)
+                    const Divider(height: 20, color: Color(0xFFF0F0F0)),
+                ],
+              );
+            }),
         ],
       ),
     );
@@ -764,15 +887,6 @@ class _StatItem {
   final String sub;
   final Color? subColor;
   const _StatItem(this.emoji, this.label, this.value, this.sub, this.subColor);
-}
-
-class _Schedule {
-  final String name;
-  final String date;
-  final String type;
-  final Color color;
-  final bool isUrgent;
-  const _Schedule(this.name, this.date, this.type, this.color, this.isUrgent);
 }
 
 class _NavItem {
