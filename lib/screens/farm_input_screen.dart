@@ -581,10 +581,19 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
                 const Row(
                   children: [
                     _TableHeader('Tanggal', flex: 2),
-                    _TableHeader('Telur', flex: 2),
-                    _TableHeader('Berat kg', flex: 2),
-                    _TableHeader('Mati', flex: 1),
-                    _TableHeader('Pakan kg', flex: 2),
+                    _TableHeader('Telur', flex: 2, textAlign: TextAlign.right),
+                    _TableHeader(
+                      'Berat kg',
+                      flex: 2,
+                      textAlign: TextAlign.right,
+                    ),
+                    _TableHeader('Mati', flex: 1, textAlign: TextAlign.right),
+                    _TableHeader(
+                      'Pakan kg',
+                      flex: 2,
+                      textAlign: TextAlign.right,
+                    ),
+                    SizedBox(width: 32),
                   ],
                 ),
                 const Divider(height: 14, color: Color(0xFFF0F0F0)),
@@ -595,10 +604,26 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
                       Row(
                         children: [
                           _tableCell(r.shortDate, flex: 2),
-                          _tableCell(r.eggCount.toString(), flex: 2),
-                          _tableCell(r.eggWeight.toStringAsFixed(1), flex: 2),
-                          _tableCell(r.chickenDeath.toString(), flex: 1),
-                          _tableCell(r.feedSold.toStringAsFixed(1), flex: 2),
+                          _tableCell(
+                            r.eggCount.toString(),
+                            flex: 2,
+                            textAlign: TextAlign.right,
+                          ),
+                          _tableCell(
+                            r.eggWeight.toStringAsFixed(1),
+                            flex: 2,
+                            textAlign: TextAlign.right,
+                          ),
+                          _tableCell(
+                            r.chickenDeath.toString(),
+                            flex: 1,
+                            textAlign: TextAlign.right,
+                          ),
+                          _tableCell(
+                            r.feedSold.toStringAsFixed(1),
+                            flex: 2,
+                            textAlign: TextAlign.right,
+                          ),
                           PopupMenuButton<String>(
                             padding: EdgeInsets.zero,
                             iconSize: 18,
@@ -709,11 +734,16 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
     );
   }
 
-  Widget _tableCell(String text, {required int flex}) {
+  Widget _tableCell(
+    String text, {
+    required int flex,
+    TextAlign textAlign = TextAlign.left,
+  }) {
     return Expanded(
       flex: flex,
       child: Text(
         text,
+        textAlign: textAlign,
         style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A1A)),
       ),
     );
@@ -1071,7 +1101,12 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
 class _TableHeader extends StatelessWidget {
   final String text;
   final int flex;
-  const _TableHeader(this.text, {required this.flex});
+  final TextAlign textAlign;
+  const _TableHeader(
+    this.text, {
+    required this.flex,
+    this.textAlign = TextAlign.left,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1079,6 +1114,7 @@ class _TableHeader extends StatelessWidget {
       flex: flex,
       child: Text(
         text,
+        textAlign: textAlign,
         style: const TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,

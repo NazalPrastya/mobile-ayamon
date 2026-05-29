@@ -39,8 +39,14 @@ class DashboardDailyData {
     return DashboardDailyData(
       date: json['date'] as String? ?? '',
       farmName: farm['name'] as String? ?? '',
-      chickenCount: (farm['chicken_count'] as num?)?.toInt() ?? 0,
-      eggTarget: (farm['egg_target'] as num?)?.toInt() ?? 0,
+      chickenCount:
+          int.tryParse(farm['chicken_count']?.toString() ?? '') ??
+          (farm['chicken_count'] as num?)?.toInt() ??
+          0,
+      eggTarget:
+          int.tryParse(farm['egg_target']?.toString() ?? '') ??
+          (farm['egg_target'] as num?)?.toInt() ??
+          0,
       eggCount: (json['egg_count'] as num?)?.toInt() ?? 0,
       eggWeightKg: (json['egg_weight_kg'] as num?)?.toDouble() ?? 0,
       chickenAlive: (json['chicken_alive'] as num?)?.toInt() ?? 0,
@@ -198,6 +204,10 @@ class DashboardService {
           )
           .timeout(const Duration(seconds: 15));
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (resp.statusCode == 401) {
+        AuthService.instance.handleUnauthorized();
+        return null;
+      }
       if (resp.statusCode == 200 && body['status'] == 'success') {
         return DashboardDailyData.fromJson(
           body['data'] as Map<String, dynamic>,
@@ -219,6 +229,10 @@ class DashboardService {
           )
           .timeout(const Duration(seconds: 15));
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (resp.statusCode == 401) {
+        AuthService.instance.handleUnauthorized();
+        return [];
+      }
       if (resp.statusCode == 200 && body['status'] == 'success') {
         final list = body['data'] as List<dynamic>;
         return list
@@ -238,6 +252,10 @@ class DashboardService {
           )
           .timeout(const Duration(seconds: 15));
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (resp.statusCode == 401) {
+        AuthService.instance.handleUnauthorized();
+        return null;
+      }
       if (resp.statusCode == 200 && body['status'] == 'success') {
         return DashboardResume.fromJson(body['data'] as Map<String, dynamic>);
       }
@@ -254,6 +272,10 @@ class DashboardService {
           )
           .timeout(const Duration(seconds: 15));
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (resp.statusCode == 401) {
+        AuthService.instance.handleUnauthorized();
+        return null;
+      }
       if (resp.statusCode == 200 && body['status'] == 'success') {
         return DashboardExpensesData.fromJson(
           body['data'] as Map<String, dynamic>,

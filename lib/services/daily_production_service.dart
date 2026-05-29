@@ -34,6 +34,10 @@ class DailyProductionService {
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
 
+      if (response.statusCode == 401) {
+        AuthService.instance.handleUnauthorized();
+        return (null, null, 'Sesi habis. Silakan login ulang.');
+      }
       if (response.statusCode == 200 && body['status'] == 'success') {
         final list = (body['data'] as List)
             .map(

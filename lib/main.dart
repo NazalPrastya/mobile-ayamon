@@ -6,6 +6,8 @@ import 'screens/register_screen.dart';
 import 'screens/thank_you_screen.dart';
 import 'screens/farm_list_screen.dart';
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
@@ -22,6 +24,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Ayamon',
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFFF6B00)),
         useMaterial3: true,

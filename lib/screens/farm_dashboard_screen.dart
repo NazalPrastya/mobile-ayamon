@@ -220,27 +220,27 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
         color: const Color(0xFFE8F4FD),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.warning_amber_rounded,
-            color: Color(0xFF1E88E5),
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              '3 jadwal perlu diselesaikan: Vaksin ND, Vitamin B Kompleks, Pembersihan Kandang',
-              style: TextStyle(
-                fontSize: 13,
-                color: Color(0xFF1E88E5),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
+      // child: Row(
+      //   crossAxisAlignment: CrossAxisAlignment.start,
+      //   children: [
+      //     const Icon(
+      //       Icons.warning_amber_rounded,
+      //       color: Color(0xFF1E88E5),
+      //       size: 18,
+      //     ),
+      //     const SizedBox(width: 8),
+      //     const Expanded(
+      //       child: Text(
+      //         '3 jadwal perlu diselesaikan: Vaksin ND, Vitamin B Kompleks, Pembersihan Kandang',
+      //         style: TextStyle(
+      //           fontSize: 13,
+      //           color: Color(0xFF1E88E5),
+      //           fontWeight: FontWeight.w500,
+      //         ),
+      //       ),
+      //     ),
+      //   ],
+      // ),
     );
   }
 

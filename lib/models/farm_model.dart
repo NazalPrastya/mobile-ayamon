@@ -29,12 +29,16 @@ class FarmModel {
       name: json['name'] as String,
       location: json['location'] as String?,
       periode: json['periode'] as String? ?? '-',
-      chickenCount: json['chicken_count'] as int? ?? 0,
+      chickenCount:
+          int.tryParse(json['chicken_count']?.toString() ?? '') ??
+          (json['chicken_count'] as int? ?? 0),
       capital: json['capital'] as String? ?? '0',
       priceSell: json['price_sell'] as String? ?? '0',
       priceFeed: json['price_feed'] as String? ?? '0',
       priceOps: json['price_ops'] as String? ?? '0',
-      eggTarget: json['egg_target'] as int? ?? 0,
+      eggTarget:
+          int.tryParse(json['egg_target']?.toString() ?? '') ??
+          (json['egg_target'] as int? ?? 0),
     );
   }
 }

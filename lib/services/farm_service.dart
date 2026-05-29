@@ -24,6 +24,10 @@ class FarmService {
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
 
+      if (response.statusCode == 401) {
+        AuthService.instance.handleUnauthorized();
+        return (null, 'Sesi habis. Silakan login ulang.');
+      }
       if (response.statusCode == 200 && body['status'] == 'success') {
         final list = (body['data'] as List)
             .map((e) => FarmModel.fromJson(e as Map<String, dynamic>))
@@ -57,6 +61,10 @@ class FarmService {
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
 
+      if (response.statusCode == 401) {
+        AuthService.instance.handleUnauthorized();
+        return (null, 'Sesi habis. Silakan login ulang.');
+      }
       if (response.statusCode == 200 && body['status'] == 'success') {
         return (FarmModel.fromJson(body['data'] as Map<String, dynamic>), null);
       }
@@ -156,6 +164,10 @@ class FarmService {
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
 
+      if (response.statusCode == 401) {
+        AuthService.instance.handleUnauthorized();
+        return 'Sesi habis. Silakan login ulang.';
+      }
       if (response.statusCode == 200 && body['status'] == 'success') {
         return null; // success
       }

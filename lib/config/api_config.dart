@@ -1,27 +1,23 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 
 class ApiConfig {
   ApiConfig._();
 
-  /// IP lokal komputer – dipakai saat test di device fisik.
-  /// Jalankan `ipconfig getifaddr en0` di terminal untuk tahu IP-nya.
+  static const String _prodUrl = 'https://ayamon.creators.co.id';
+
+  /// Set true untuk pakai server lokal (development), false untuk production.
+  static const bool _useLocal = false;
+
+  /// IP lokal komputer – hanya dipakai saat _useLocal = true & Android emulator.
   static const String _localIp = '192.168.200.240';
 
-  /// Ganti false → true jika test di device fisik (bukan emulator).
-  static const bool _usePhysicalDevice = false;
-
   static String get baseUrl {
+    if (!_useLocal) return _prodUrl;
     if (kIsWeb) return 'http://127.0.0.1:8000';
-    if (Platform.isAndroid) {
-      // 10.0.2.2 = localhost host di Android emulator
-      return _usePhysicalDevice
-          ? 'http://$_localIp:8000'
-          : 'http://10.0.2.2:8000';
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://10.0.2.2:8000';
     }
-    if (Platform.isIOS) return 'http://$_localIp:8000';
-    return 'http://127.0.0.1:8000';
+    return 'http://$_localIp:8000';
   }
 
   static String get loginUrl => '$baseUrl/api/auth/login';
@@ -55,4 +51,10 @@ class ApiConfig {
       '$baseUrl/api/dashboard/financial-summary?farm_id=$farmId';
   static String dashboardReportUrl(String farmId) =>
       '$baseUrl/api/dashboard/report?farm_id=$farmId';
+
+  // ── Schedules ─────────────────────────────────────────────────────────────
+  static String schedulesUrl(String farmId, {int page = 1}) =>
+      '$baseUrl/api/schedules?farm_id=$farmId&page=$page';
+  static String scheduleUrl(String id) => '$baseUrl/api/schedule/$id';
+  static String get createScheduleUrl => '$baseUrl/api/schedule';
 }

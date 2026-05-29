@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../models/user_model.dart';
+import '../main.dart';
 
 class AuthService {
   AuthService._();
@@ -126,6 +127,14 @@ class AuthService {
     } catch (e) {
       return 'Tidak dapat terhubung ke server. Periksa koneksi internet.';
     }
+  }
+
+  // ── Handle 401 Unauthorized ──────────────────────────────────────────────────
+  /// Hapus sesi lokal dan redirect ke halaman login.
+  Future<void> handleUnauthorized() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (_) => false);
   }
 
   // ── Logout ───────────────────────────────────────────────────────────────────
