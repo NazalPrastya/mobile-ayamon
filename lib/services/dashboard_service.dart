@@ -53,8 +53,14 @@ class DashboardDailyData {
       chickenDeath: (json['chicken_death'] as num?)?.toInt() ?? 0,
       henDayPercent: (json['hen_day_percent'] as num?)?.toDouble() ?? 0,
       henDayTarget: (json['hen_day_target'] as num?)?.toDouble() ?? 0,
-      income: (json['income'] as num?)?.toDouble() ?? 0,
-      netIncome: (json['net_income'] as num?)?.toDouble() ?? 0,
+      income:
+          double.tryParse(json['income']?.toString() ?? '') ??
+          (json['income'] as num?)?.toDouble() ??
+          0,
+      netIncome:
+          double.tryParse(json['net_income']?.toString() ?? '') ??
+          (json['net_income'] as num?)?.toDouble() ??
+          0,
       totalEntry: (json['total_entry'] as num?)?.toInt() ?? 0,
     );
   }

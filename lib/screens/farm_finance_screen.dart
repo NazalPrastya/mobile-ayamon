@@ -57,9 +57,7 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
 
   final _jumlahAyamCtrl = TextEditingController();
   final _modalCtrl = TextEditingController();
-  final _hargaJualCtrl = TextEditingController();
   final _biayaPakanCtrl = TextEditingController();
-  final _biayaOpsCtrl = TextEditingController();
   final _targetHenDayCtrl = TextEditingController();
 
   // ── Ringkasan state ──
@@ -67,7 +65,6 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
   String? _ringkasanError;
   double _rsIncome = 0;
   double _rsRecordedExpenses = 0;
-  double _rsFeedCost = 0;
   double _rsCapital = 0;
   double _rsNet = 0;
   List<Map<String, dynamic>> _rsCategoryBreakdown = [];
@@ -220,16 +217,20 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
         final cats =
             body['data']['expense_by_category'] as List<dynamic>? ?? [];
         setState(() {
-          _rsIncome = (summary['total_income'] as num?)?.toDouble() ?? 0;
+          _rsIncome =
+              double.tryParse(summary['total_income']?.toString() ?? '0') ?? 0;
           _rsRecordedExpenses =
               double.tryParse(
                 summary['total_recorded_expenses']?.toString() ?? '0',
               ) ??
               0;
-          _rsFeedCost = (summary['total_feed_cost'] as num?)?.toDouble() ?? 0;
           _rsCapital =
               double.tryParse(summary['capital']?.toString() ?? '0') ?? 0;
-          _rsNet = (summary['net_after_capital'] as num?)?.toDouble() ?? 0;
+          _rsNet =
+              double.tryParse(
+                summary['net_after_capital']?.toString() ?? '0',
+              ) ??
+              0;
           _rsCategoryBreakdown = cats
               .map<Map<String, dynamic>>(
                 (e) => {
@@ -718,14 +719,8 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
     _modalCtrl.text = _formatThousands(
       double.tryParse(model.capital)?.toStringAsFixed(0) ?? '0',
     );
-    _hargaJualCtrl.text = _formatThousands(
-      double.tryParse(model.priceSell)?.toStringAsFixed(0) ?? '0',
-    );
     _biayaPakanCtrl.text = _formatThousands(
       double.tryParse(model.priceFeed)?.toStringAsFixed(0) ?? '0',
-    );
-    _biayaOpsCtrl.text = _formatThousands(
-      double.tryParse(model.priceOps)?.toStringAsFixed(0) ?? '0',
     );
     _targetHenDayCtrl.text = _formatThousands(model.eggTarget.toString());
     setState(() => _settingLoading = false);
@@ -735,9 +730,7 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
   void dispose() {
     _jumlahAyamCtrl.dispose();
     _modalCtrl.dispose();
-    _hargaJualCtrl.dispose();
     _biayaPakanCtrl.dispose();
-    _biayaOpsCtrl.dispose();
     _targetHenDayCtrl.dispose();
     _expAmountCtrl.dispose();
     _expNoteCtrl.dispose();
@@ -930,12 +923,8 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
           int.tryParse(_jumlahAyamCtrl.text.trim().replaceAll('.', '')) ?? 0,
       'capital':
           double.tryParse(_modalCtrl.text.trim().replaceAll('.', '')) ?? 0,
-      'price_sell':
-          double.tryParse(_hargaJualCtrl.text.trim().replaceAll('.', '')) ?? 0,
       'price_feed':
           double.tryParse(_biayaPakanCtrl.text.trim().replaceAll('.', '')) ?? 0,
-      'price_ops':
-          double.tryParse(_biayaOpsCtrl.text.trim().replaceAll('.', '')) ?? 0,
       'egg_target':
           int.tryParse(_targetHenDayCtrl.text.trim().replaceAll('.', '')) ?? 0,
     });
@@ -1015,23 +1004,7 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
       Row(
         children: [
           Expanded(
-            child: _settingField(_hargaJualCtrl, 'Harga Jual (Rp/kg)', false),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
             child: _settingField(_biayaPakanCtrl, 'Biaya Pakan (Rp/kg)', false),
-          ),
-        ],
-      ),
-      const SizedBox(height: 12),
-      Row(
-        children: [
-          Expanded(
-            child: _settingField(
-              _biayaOpsCtrl,
-              'Biaya Operasional/bln (Rp)',
-              false,
-            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1685,8 +1658,8 @@ class _FarmFinanceScreenState extends State<FarmFinanceScreen> {
             _formatRp(_rsRecordedExpenses),
             null,
           ),
-          const Divider(height: 20, color: Color(0xFFF5F5F5)),
-          _summaryRow('Biaya Pakan (otomatis)', _formatRp(_rsFeedCost), null),
+          // const Divider(height: 20, color: Color(0xFFF5F5F5)),
+          // _summaryRow('Biaya Pakan (otomatis)', _formatRp(_rsFeedCost), null),
           const Divider(height: 20, color: Color(0xFFF5F5F5)),
           _summaryRow('Modal Awal', _formatRp(_rsCapital), null),
           const Divider(height: 20, color: Color(0xFFF5F5F5)),

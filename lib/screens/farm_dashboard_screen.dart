@@ -18,6 +18,12 @@ class FarmDashboardScreen extends StatefulWidget {
 class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
   int _selectedIndex = 0;
 
+  // ── Tab rebuild keys (increment to force re-fetch on tab switch) ──────────
+  int _inputKey = 0;
+  int _financeKey = 0;
+  int _scheduleKey = 0;
+  int _reportKey = 0;
+
   // ── API state ──────────────────────────────────────────────────────────────
   bool _loading = true;
   DashboardDailyData? _daily;
@@ -32,6 +38,18 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
   void initState() {
     super.initState();
     _loadAll();
+  }
+
+  void _onNavTap(int i) {
+    if (i == _selectedIndex) return;
+    setState(() {
+      if (i == 0) _loadAll();
+      if (i == 1) _inputKey++;
+      if (i == 2) _financeKey++;
+      if (i == 3) _scheduleKey++;
+      if (i == 4) _reportKey++;
+      _selectedIndex = i;
+    });
   }
 
   Future<void> _loadAll() async {
@@ -133,6 +151,7 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
                 ),
           // 1 – Input
           FarmInputScreen(
+            key: ValueKey(_inputKey),
             farm: widget.farm,
             selectedNavIndex: 1,
             onNavTap: (_) {},
@@ -140,6 +159,7 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
           ),
           // 2 – Keuangan
           FarmFinanceScreen(
+            key: ValueKey(_financeKey),
             farm: widget.farm,
             selectedNavIndex: 2,
             onNavTap: (_) {},
@@ -147,6 +167,7 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
           ),
           // 3 – Jadwal
           FarmScheduleScreen(
+            key: ValueKey(_scheduleKey),
             farm: widget.farm,
             selectedNavIndex: 3,
             onNavTap: (_) {},
@@ -154,6 +175,7 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
           ),
           // 4 – Laporan
           FarmReportScreen(
+            key: ValueKey(_reportKey),
             farm: widget.farm,
             selectedNavIndex: 4,
             onNavTap: (_) {},
@@ -247,7 +269,6 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
   // ─── Stats Grid ─────────────────────────────────────────────────────────────
   Widget _buildStatsGrid() {
     final d = _daily;
-    final r = _resume;
 
     String fmtRp(double v) {
       final abs = v.abs();
@@ -269,7 +290,7 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
       _StatItem(
         Icons.track_changes_outlined,
         const Color(0xFF1E88E5),
-        'Hen-day',
+        'Produktivitas',
         d != null ? '${d.henDayPercent.toStringAsFixed(1)}%' : '-',
         d != null ? 'Target ${d.henDayTarget.toStringAsFixed(1)}%' : '-',
         null,
@@ -304,9 +325,7 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
         Icons.calendar_today_outlined,
         const Color(0xFF00897B),
         'Data Hari',
-        r != null
-            ? '${r.totalIncome > 0 ? r.totalIncome.toInt() : d?.totalEntry ?? 0}'
-            : (d != null ? '${d.totalEntry}' : '-'),
+        d != null ? '${d.totalEntry}' : '-',
         'total entry',
         null,
       ),
@@ -852,7 +871,7 @@ class _FarmDashboardScreenState extends State<FarmDashboardScreen> {
           final selected = i == _selectedIndex;
           return GestureDetector(
             onTap: () {
-              setState(() => _selectedIndex = i);
+              _onNavTap(i);
             },
             child: Column(
               mainAxisSize: MainAxisSize.min,

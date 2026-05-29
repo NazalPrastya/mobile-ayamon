@@ -30,6 +30,7 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
   final _beratCtrl = TextEditingController(text: '0.0');
   final _matiCtrl = TextEditingController(text: '0');
   final _pakanCtrl = TextEditingController(text: '0.0');
+  final _incomeCtrl = TextEditingController(text: '0');
   final _catatanCtrl = TextEditingController();
 
   List<DailyProductionModel> _riwayat = [];
@@ -92,6 +93,7 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
     _beratCtrl.dispose();
     _matiCtrl.dispose();
     _pakanCtrl.dispose();
+    _incomeCtrl.dispose();
     _catatanCtrl.dispose();
     super.dispose();
   }
@@ -130,10 +132,14 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
     final (_, error) = await DailyProductionService.instance.create({
       'farm_id': widget.farm.id,
       'date': dateStr,
-      'egg_count': int.tryParse(_telurCtrl.text.trim()) ?? 0,
+      'egg_count':
+          int.tryParse(_telurCtrl.text.trim().replaceAll('.', '')) ?? 0,
       'egg_weight': double.tryParse(_beratCtrl.text.trim()) ?? 0.0,
-      'chicken_death': int.tryParse(_matiCtrl.text.trim()) ?? 0,
+      'chicken_death':
+          int.tryParse(_matiCtrl.text.trim().replaceAll('.', '')) ?? 0,
       'feed_sold': double.tryParse(_pakanCtrl.text.trim()) ?? 0.0,
+      'income':
+          double.tryParse(_incomeCtrl.text.trim().replaceAll('.', '')) ?? 0.0,
       'note': _catatanCtrl.text.trim(),
     });
 
@@ -166,6 +172,7 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
     _beratCtrl.text = '0.0';
     _matiCtrl.text = '0';
     _pakanCtrl.text = '0.0';
+    _incomeCtrl.text = '0';
     _catatanCtrl.clear();
     _loadRiwayat(); // refresh table
   }
@@ -366,7 +373,11 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
                     children: [
                       _fieldLabel('Jumlah Telur (butir)'),
                       const SizedBox(height: 6),
-                      _numberField(controller: _telurCtrl, isDecimal: false),
+                      _numberField(
+                        controller: _telurCtrl,
+                        isDecimal: false,
+                        thousandSeparator: true,
+                      ),
                     ],
                   ),
                 ),
@@ -394,7 +405,11 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
                     children: [
                       _fieldLabel('Kematian (ekor)'),
                       const SizedBox(height: 6),
-                      _numberField(controller: _matiCtrl, isDecimal: false),
+                      _numberField(
+                        controller: _matiCtrl,
+                        isDecimal: false,
+                        thousandSeparator: true,
+                      ),
                     ],
                   ),
                 ),
@@ -410,6 +425,16 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 14),
+
+            // Income
+            _fieldLabel('Pendapatan/Penjualan (Rp)'),
+            const SizedBox(height: 6),
+            _numberField(
+              controller: _incomeCtrl,
+              isDecimal: false,
+              thousandSeparator: true,
             ),
             const SizedBox(height: 14),
 
@@ -495,15 +520,18 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
   Widget _numberField({
     required TextEditingController controller,
     required bool isDecimal,
+    bool thousandSeparator = false,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: TextInputType.numberWithOptions(decimal: isDecimal),
-      inputFormatters: [
-        FilteringTextInputFormatter.allow(
-          isDecimal ? RegExp(r'^\d*\.?\d*') : RegExp(r'^\d*'),
-        ),
-      ],
+      inputFormatters: thousandSeparator
+          ? [ThousandSeparatorInputFormatter()]
+          : [
+              FilteringTextInputFormatter.allow(
+                isDecimal ? RegExp(r'^\d*\.?\d*') : RegExp(r'^\d*'),
+              ),
+            ],
       decoration: InputDecoration(
         filled: true,
         fillColor: const Color(0xFFF5F5F5),
@@ -577,109 +605,13 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
           else
             Column(
               children: [
-                // Table header
-                const Row(
-                  children: [
-                    _TableHeader('Tanggal', flex: 2),
-                    _TableHeader('Telur', flex: 2, textAlign: TextAlign.right),
-                    _TableHeader(
-                      'Berat kg',
-                      flex: 2,
-                      textAlign: TextAlign.right,
-                    ),
-                    _TableHeader('Mati', flex: 1, textAlign: TextAlign.right),
-                    _TableHeader(
-                      'Pakan kg',
-                      flex: 2,
-                      textAlign: TextAlign.right,
-                    ),
-                    SizedBox(width: 32),
-                  ],
-                ),
-                const Divider(height: 14, color: Color(0xFFF0F0F0)),
                 ...List.generate(_riwayat.length, (i) {
                   final r = _riwayat[i];
                   return Column(
                     children: [
-                      Row(
-                        children: [
-                          _tableCell(r.shortDate, flex: 2),
-                          _tableCell(
-                            r.eggCount.toString(),
-                            flex: 2,
-                            textAlign: TextAlign.right,
-                          ),
-                          _tableCell(
-                            r.eggWeight.toStringAsFixed(1),
-                            flex: 2,
-                            textAlign: TextAlign.right,
-                          ),
-                          _tableCell(
-                            r.chickenDeath.toString(),
-                            flex: 1,
-                            textAlign: TextAlign.right,
-                          ),
-                          _tableCell(
-                            r.feedSold.toStringAsFixed(1),
-                            flex: 2,
-                            textAlign: TextAlign.right,
-                          ),
-                          PopupMenuButton<String>(
-                            padding: EdgeInsets.zero,
-                            iconSize: 18,
-                            icon: const Icon(
-                              Icons.more_vert,
-                              color: Color(0xFFCCCCCC),
-                              size: 18,
-                            ),
-                            onSelected: (value) {
-                              if (value == 'edit') _showEditSheet(r);
-                              if (value == 'delete') _deleteRecord(r);
-                            },
-                            itemBuilder: (_) => [
-                              const PopupMenuItem(
-                                value: 'edit',
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.edit_outlined,
-                                      size: 15,
-                                      color: Color(0xFF555555),
-                                    ),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Edit',
-                                      style: TextStyle(fontSize: 13),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'delete',
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.delete_outline,
-                                      size: 15,
-                                      color: Colors.red,
-                                    ),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Hapus',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.red,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                      _buildRiwayatItem(r),
                       if (i < _riwayat.length - 1)
-                        const Divider(height: 18, color: Color(0xFFF5F5F5)),
+                        const Divider(height: 16, color: Color(0xFFF0F0F0)),
                     ],
                   );
                 }),
@@ -734,17 +666,202 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
     );
   }
 
-  Widget _tableCell(
-    String text, {
-    required int flex,
-    TextAlign textAlign = TextAlign.left,
-  }) {
+  String _formatRupiah(double value) {
+    final intVal = value.toInt();
+    final str = intVal.toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < str.length; i++) {
+      if (i > 0 && (str.length - i) % 3 == 0) buffer.write('.');
+      buffer.write(str[i]);
+    }
+    return buffer.toString();
+  }
+
+  Widget _buildRiwayatItem(DailyProductionModel r) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header row: tanggal + popup
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.calendar_today_outlined,
+                  size: 13,
+                  color: Color(0xFFFF6B00),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  r.displayDate,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A1A1A),
+                  ),
+                ),
+              ],
+            ),
+            PopupMenuButton<String>(
+              padding: EdgeInsets.zero,
+              iconSize: 18,
+              icon: const Icon(
+                Icons.more_vert,
+                color: Color(0xFFCCCCCC),
+                size: 18,
+              ),
+              onSelected: (value) {
+                if (value == 'edit') _showEditSheet(r);
+                if (value == 'delete') _deleteRecord(r);
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.edit_outlined,
+                        size: 15,
+                        color: Color(0xFF555555),
+                      ),
+                      SizedBox(width: 8),
+                      Text('Edit', style: TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline, size: 15, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text(
+                        'Hapus',
+                        style: TextStyle(fontSize: 13, color: Colors.red),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Stats grid: 3 kolom x 2 baris
+        Row(
+          children: [
+            _statChip(
+              Icons.egg_outlined,
+              'Telur',
+              '${_formatRupiah(r.eggCount.toDouble())} btr',
+              const Color(0xFFFF6B00),
+            ),
+            const SizedBox(width: 8),
+            _statChip(
+              Icons.people_outline,
+              'Populasi',
+              '${r.population} ekor',
+              const Color(0xFF1E88E5),
+            ),
+            const SizedBox(width: 8),
+            _statChip(
+              Icons.track_changes_outlined,
+              'Produktifitas',
+              '${r.productivityPercent.toStringAsFixed(1)}%',
+              const Color(0xFF43A047),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            _statChip(
+              Icons.account_balance_wallet_outlined,
+              'Pendapatan',
+              'Rp ${_formatRupiah(r.income)}',
+              const Color(0xFF8E24AA),
+            ),
+            const SizedBox(width: 8),
+            _statChip(
+              Icons.trending_down_rounded,
+              'Mati',
+              '${r.chickenDeath} ekor',
+              const Color(0xFFE53935),
+            ),
+            const SizedBox(width: 8),
+            _statChip(
+              Icons.grass_outlined,
+              'Pakan',
+              '${r.feedSold.toStringAsFixed(1)} kg',
+              const Color(0xFF00897B),
+            ),
+          ],
+        ),
+        if (r.note != null && r.note!.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(
+                Icons.notes_outlined,
+                size: 12,
+                color: Color(0xFFAAAAAA),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  r.note!,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF888888),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _statChip(IconData icon, String label, String value, Color color) {
     return Expanded(
-      flex: flex,
-      child: Text(
-        text,
-        textAlign: textAlign,
-        style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A1A)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 10, color: color),
+                const SizedBox(width: 3),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF1A1A1A),
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -762,6 +879,9 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
     );
     final pakanCtrl = TextEditingController(
       text: record.feedSold.toStringAsFixed(1),
+    );
+    final incomeCtrl = TextEditingController(
+      text: record.income.toStringAsFixed(0),
     );
     final catatanCtrl = TextEditingController(text: record.note ?? '');
     bool saving = false;
@@ -882,6 +1002,13 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
                       ],
                     ),
                     const SizedBox(height: 10),
+                    _sheetField(
+                      incomeCtrl,
+                      'Pendapatan/Penjualan (Rp)',
+                      false,
+                      thousandSeparator: true,
+                    ),
+                    const SizedBox(height: 10),
                     TextField(
                       controller: catatanCtrl,
                       maxLines: 2,
@@ -921,14 +1048,25 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
                                       'farm_id': widget.farm.id,
                                       'date': dateStr,
                                       'egg_count':
-                                          int.tryParse(telurCtrl.text) ?? 0,
+                                          int.tryParse(
+                                            telurCtrl.text.replaceAll('.', ''),
+                                          ) ??
+                                          0,
                                       'egg_weight':
                                           double.tryParse(beratCtrl.text) ??
                                           0.0,
                                       'chicken_death':
-                                          int.tryParse(matiCtrl.text) ?? 0,
+                                          int.tryParse(
+                                            matiCtrl.text.replaceAll('.', ''),
+                                          ) ??
+                                          0,
                                       'feed_sold':
                                           double.tryParse(pakanCtrl.text) ??
+                                          0.0,
+                                      'income':
+                                          double.tryParse(
+                                            incomeCtrl.text.replaceAll('.', ''),
+                                          ) ??
                                           0.0,
                                       'note': catatanCtrl.text.trim(),
                                     });
@@ -981,15 +1119,22 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
     );
   }
 
-  Widget _sheetField(TextEditingController ctrl, String label, bool decimal) {
+  Widget _sheetField(
+    TextEditingController ctrl,
+    String label,
+    bool decimal, {
+    bool thousandSeparator = false,
+  }) {
     return TextField(
       controller: ctrl,
       keyboardType: TextInputType.numberWithOptions(decimal: decimal),
-      inputFormatters: [
-        FilteringTextInputFormatter.allow(
-          decimal ? RegExp(r'^\d*\.?\d*') : RegExp(r'^\d*'),
-        ),
-      ],
+      inputFormatters: thousandSeparator
+          ? [ThousandSeparatorInputFormatter()]
+          : [
+              FilteringTextInputFormatter.allow(
+                decimal ? RegExp(r'^\d*\.?\d*') : RegExp(r'^\d*'),
+              ),
+            ],
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: Color(0xFF888888), fontSize: 13),
@@ -1098,30 +1243,34 @@ class _FarmInputScreenState extends State<FarmInputScreen> {
   }
 }
 
-class _TableHeader extends StatelessWidget {
-  final String text;
-  final int flex;
-  final TextAlign textAlign;
-  const _TableHeader(
-    this.text, {
-    required this.flex,
-    this.textAlign = TextAlign.left,
-  });
-
+class ThousandSeparatorInputFormatter extends TextInputFormatter {
   @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      flex: flex,
-      child: Text(
-        text,
-        textAlign: textAlign,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF888888),
-        ),
-      ),
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll('.', '');
+    if (digits.isEmpty) {
+      return newValue.copyWith(
+        text: '',
+        selection: const TextSelection.collapsed(offset: 0),
+      );
+    }
+    if (!RegExp(r'^\d+$').hasMatch(digits)) return oldValue;
+    final formatted = _addSeparator(digits);
+    return newValue.copyWith(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
+  }
+
+  String _addSeparator(String digits) {
+    final buffer = StringBuffer();
+    for (int i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buffer.write('.');
+      buffer.write(digits[i]);
+    }
+    return buffer.toString();
   }
 }
 

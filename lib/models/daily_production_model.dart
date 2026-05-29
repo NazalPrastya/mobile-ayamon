@@ -6,6 +6,9 @@ class DailyProductionModel {
   final int chickenDeath;
   final double eggWeight;
   final double feedSold;
+  final double income;
+  final int population;
+  final double productivityPercent;
   final String? note;
   final String createdAt;
 
@@ -17,6 +20,9 @@ class DailyProductionModel {
     required this.chickenDeath,
     required this.eggWeight,
     required this.feedSold,
+    required this.income,
+    required this.population,
+    required this.productivityPercent,
     this.note,
     required this.createdAt,
   });
@@ -30,6 +36,11 @@ class DailyProductionModel {
       chickenDeath: int.tryParse(json['chicken_death']?.toString() ?? '') ?? 0,
       eggWeight: double.tryParse(json['egg_weight']?.toString() ?? '0') ?? 0.0,
       feedSold: double.tryParse(json['feed_sold']?.toString() ?? '0') ?? 0.0,
+      income: double.tryParse(json['income']?.toString() ?? '0') ?? 0.0,
+      population: (json['population'] as num?)?.toInt() ?? 0,
+      productivityPercent:
+          double.tryParse(json['productivity_percent']?.toString() ?? '0') ??
+          0.0,
       note: json['note'] as String?,
       createdAt: json['created_at'] as String? ?? '',
     );
